@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 import site
 from getmac import get_mac_address as gma
-
+import pickle 
 
 # add VL api to pythonpath
 root = Path(r'G:\Shared drives\VitreaLab Share')
@@ -24,6 +24,7 @@ import Kinesis.KDC101_Translation_Class as KDC101_Class
 # reads mac address to identify PC
 mac = gma()
 
+
 #%% set serial numbers
 # characterisation setup right
 if mac == '18:c0:4d:26:9c:53':
@@ -36,11 +37,11 @@ if mac == '18:c0:4d:26:9c:53':
     SN_CAMERA = "41220696" #DMM 37UX265-ML
 
 
-#Connect stage
+#Connect to stage
 z_stage = KDC101_Class.KDC101_translation(SN_KDC)
 
 
-# Connect camera
+# Connect to camera
 cam1 = None
 del cam1
 cam1 = TISCamera(SN_CAMERA) #monochrome, SN 28020401
@@ -51,32 +52,25 @@ cam1.set_format('Y16 (2048x1536)')
 print(cam1.get_format())
 
 
-#%%connect to z-stage
-z_stage = KDC101_Class.KDC101_translation(SN_KDC)
-out_z_coord = z_stage.read_position()
-print(out_z_coord)
-
-
-#%%
-delta_z = -0.1
-z_stage.rel_move(delta_z)
-out_z_coord = z_stage.read_position()
-print(out_z_coord)
-
 #%%
 def abs_move_stage(abs_pos):
-    
     if 0<abs_pos<24.5:
         out_z_coord_start = z_stage.read_position()
         z_stage.abs_move(float(abs_pos))
         out_z_coord_stop = z_stage.read_position()
-        print(f"Start position: {out_z_coord_start:.2f}mm")
-        print(f"Stop position: {out_z_coord_stop:.2f}mm")
+        print(f"Moved stage from {out_z_coord_start:.2f}mm to {out_z_coord_stop:.2f}mm.")
     else:
         print("Give a position in the range [0-25mm]")
     
-    
+
 def rel_move_stage(rel_step = +0.1):
+    """
+    Jogs the stage by a relative step size;
+    
+    Returns the final coordinate of the stage
+    
+    """
+    
     rel_step = float(rel_step)
     
     if 0.001<rel_step<1.0:
@@ -84,16 +78,16 @@ def rel_move_stage(rel_step = +0.1):
         out_z_coord_start = z_stage.read_position()
         z_stage.rel_move(float(rel_step))
         out_z_coord_stop = z_stage.read_position()
-        print(f"Start position: {out_z_coord_start:.2f}mm")
-        print(f"Stop position: {out_z_coord_stop:.2f}mm")
+        print(f"Jogged stage from {out_z_coord_start:.2f}mm to {out_z_coord_stop:.2f}mm.")
     else:
         print("Give a valid relative jog size: [0.001-1.0]mm")
+    
+    return out_z_coord_stop
 
 
-def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True):
+def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True, save = False):
     
     inlineOrWindow = 0 # inline=0 window=1
-    
     #exp_time = 1/5000
     #camera_gain = 0
     #FPS = 5
@@ -105,7 +99,6 @@ def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True):
     print('FPS: %.4f' %(cam1.get_framerate()))
     print('Exposure: %.10f (s)' %(cam1.get_exposure()))
     print('Gain: %.4f (dB)' %(cam1.get_gain()))
-    
     
     img = cam1.snap_image() #save image
     
@@ -150,39 +143,92 @@ def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True):
             print('Mean (16 bit): R=%.2f, G=%.2f, B=%.2f' %(np.mean(img[:,:,0]),np.mean(img[:,:,1]),np.mean(img[:,:,2])))
             print('Max (16 bit=65536): R=%.2f, G=%.2f, B=%.2f' %(np.max(img[:,:,0]),np.max(img[:,:,1]),np.max(img[:,:,2])))
 
- #%%      
-if not True: # save image
-     
-    now = datetime.datetime.now() #date and time
-    today = now.strftime("%Y-%m-%d") #date
-    now_time = now.strftime("%H.%M.%S") #time
-    
-    
-    # location = (location + '/' + camera.get_format()+'/')
-    
-    # location = (r'G:\Shared drives\VitreaLab Share\Lab Data\Light Engine Team\X-Reality Projects (XR)\Virtual Reality (VR)\Lab data\2022-11-09\python')
-    
-    location = (r'G:\Shared drives\VitreaLab Share\Lab Data\Light Engine Team\X-Reality Projects (XR)\Augmented Reality (AR)\Lab data\AR')
-    
-    location = (location + '/' + today +'/')
-    
-    location = (location + '10mm lens/Speckle/' )
-    
-       
-    nam = ('B_Dy_1_FPS=%.2f_Gain=%.2fdB_exp=%.4fs' 
-           %(camera.get_framerate(),camera.get_framerate(),camera.get_exposure()))
-    
-    # nam = ('white_MEMS=40Vpp_401Hz_FPS=%.4f_Gain=%.4fdB_exp=%.4fs' 
-    #        %(camera.get_framerate(),camera.get_framerate(),camera.get_exposure()))
+        
+    if save: # save image
+         
+        now = datetime.datetime.now() #date and time
+        today = now.strftime("%Y-%m-%d") #date
+        now_time = now.strftime("%H.%M.%S") #time
+        
+        location = (r'G:\Shared drives\VitreaLab Share\Lab Data\Light Engine Team\X-Reality Projects (XR)\Augmented Reality (AR)\Lab data\AR')        
+        location = (location + '/' + today +'/')        
+        location = (location + '/beam_tomography/' )
+                   
+        nam = ('FPS=%.2f_Gain=%.2fdB_exp=%.4fs' %(cam1.get_framerate(),cam1.get_framerate(),cam1.get_exposure()))
+            
+        if not os.path.exists(location):
+            os.makedirs(location)
+        
+        print(f"Saved {location+nam}")
+        imageio.imwrite(location + nam +'.tiff', img) # save image
+        
+    return img
 
-    if not os.path.exists(location):
-        os.makedirs(location)
+        
+#%% beam tomography
+
+def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
+    """
+    Extracts several pictures of the quantum light chip, at different heights
+    for a tomographic analysis of the beams;
+
+
+    Parameters
+    ----------
+    start_pos : FLOAT, optional
+        start z-position of the stage. The default is 17.75.
+    exp_time : FLOAT, optional
+        Exposure time of the camera. The default is 1/5000.
+
+    Returns
+    -------
+    img_store : list
+        List with all the frames of the tomography.
+    coord_store : list
+        List with the z- coordinate of each frame.
+
+    """
     
-    imageio.imwrite(location + nam +'.tiff', img) # save image
+    abs_move_stage(start_pos)
+    
+    img_store = list()
+    coord_store = list()
+    
+    for i in range(40):      
+        print("-"*30)
+        current_coord = rel_move_stage(rel_step = +0.1)
+        img_i = snap_image(exp_time = exp_time, camera_gain = 0, FPS = 5, plot = True, save= False)
+        
+        img_store.append(img_i)
+        coord_store.append(current_coord)
+    
+    if save:
+        now = datetime.datetime.now() #date and time
+        today = now.strftime("%Y-%m-%d") #date
+        now_time = now.strftime("%H.%M.%S") #time
+    
+        location = (r'G:\Shared drives\VitreaLab Share\Lab Data\Light Engine Team\X-Reality Projects (XR)\Augmented Reality (AR)\Lab data\AR')        
+        location = (location + '/' + today +'/')        
+        location = (location + '/beam_tomography/' )
+                               
+        name = now_time + " tomography"
+        filename = location + name + ".pkl"
+                
+        if not os.path.exists(location):
+            os.makedirs(location)
+        
+        dictionary = {"img_store":img_store, "coord_store": coord_store}
+        with open(filename, 'wb') as f:
+            pickle.dump(dictionary, f)
+
+    return img_store, coord_store
+
 #%%
+image_store, coord_store = beam_tomography(start_pos = 14.7, exp_time=1/40000, save = True)
 
+
+#%%
 if not True: # TEST
-#%%
 
     location = 'C:/Users/limit/Desktop/'
     nam = 'test'
