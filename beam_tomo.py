@@ -12,7 +12,7 @@ class CrossSection: contains image and rotated image and z-coordinate
 class Beam: contains (id_x, id_y) and (tilt_x, tilt_y) and (beam_div_x, beam_div_y);
 
 """
-#standard library imports
+# standard library imports
 import pickle
 import numpy as np
 import os
@@ -30,10 +30,9 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from matplotlib.patches import Rectangle
 
-#3rd party imports
+# 3rd party imports
 
-#local library imports
-
+# local library imports
 
 def timeit(func):
     def wrapper(*args, **kwargs):
@@ -305,7 +304,9 @@ class Tomography:
                 self.beam_l[id_x][id_y].beam_width_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
 
                 self.beam_l[id_x][id_y].roi_l = [[] for _ in range(self.n_sections)] #initialise beam_i.roi_l
+                self.beam_l[id_x][id_y].roi_fit_params_l = [[] for _ in range(self.n_sections)]
         print("Coordinates of beam in first layer were determined.")
+
 
     def complete_beam_coords(self, id_x, id_y, debug = False):
         beam_i = self.beam_l[id_x][id_y]
@@ -328,7 +329,7 @@ class Tomography:
             #row_mu corresponds to a sum over rows --> I(y)
             #col_mu corrsponds to a sum over cols --> I(x)
             row_mu, col_mu, row_sigma, col_sigma = get_beam_specs(roi_i, self.roi_width, debug=debug)
-            coord_x = int(coord_x + (col_mu - self.roi_width / 2))
+            coord_x = int(coord_x + (col_mu - self.roi_width / 2)) #col_mu --> summed over colums --> x
             coord_y = int(coord_y + (row_mu - self.roi_width / 2))
             coord_z = self.cross_sect_z_l[id_z]
 
@@ -341,9 +342,11 @@ class Tomography:
             beam_i.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
             beam_i.beam_width_l[id_z] = np.array([row_sigma, col_sigma])
             beam_i.roi_l[id_z] = roi_i
+            beam_i.roi_fit_params_l[id_z] = [col_mu, row_mu, col_sigma, row_sigma]
 
         if debug:
             print(f"The coordinates of beam ({id_x:.0f},{id_y:.0f}) have been determined for all cross-sections.")
+
 
     def complete_all_beams_coords(self, debug = False):
         """
@@ -356,10 +359,10 @@ class Tomography:
         :param debug:
         :return:
         """
-
         for id_x in tqdm(range(self.shape[0])):
             for id_y in range(self.shape[1]):
                 self.complete_beam_coords(id_x, id_y, debug = debug)
+
 
     def complete_coords_obsolete(self, debug = False):
         """
@@ -640,10 +643,11 @@ class Beam:
         self.id_y = int(id_y)
 
         #initialised by tomo.init_coords()
-        self.beam_coord_l = list()  # of centroid [x,y,z] at different z values --> updated by tomo.complete_beam_coords()
+        self.beam_coord_l = list() # of centroid [x,y,z] at different z values --> updated by tomo.complete_beam_coords()
         self.beam_width_l = list() # sigma of gaussian fit --> radius at 1/e^2
         self.roi_l = list() #list of 2d arrays with ROIs of each beam;
-
+        self.roi_fit_params_l = list() #arr is initiaed by tomo.init_coords() and filled by tomo.complete_beam_coords()
+                                        #[col_mu, row_mu, col_sigma, row_sigma]
         #
         self.div_full_angle = None
 
