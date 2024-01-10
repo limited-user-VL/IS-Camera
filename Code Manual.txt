@@ -1,0 +1,86 @@
+### User Manual for Vitrealab Light Chip Evaluation Code
+
+#### Overview
+This code is designed to evaluate the output of Vitrealab light chips. It processes acquired images to extract tilt angles (`tilt_x`, `tilt_y`) and beam divergence (`beam_div_x`, `beam_div_y`) for each beam in a beam array.
+
+#### Classes and Their Functionalities
+
+---
+
+##### 1. `Tomography`
+This class handles the overall tomographic data and operations.
+
+**Attributes:**
+- `filename`: File location and name of the data.
+- `directory`: Current working directory.
+- `shape`: Dimensions of the beam array as a tuple `(n_rows, n_cols)`.
+- `roi_width`: Width of the region of interest (ROI) in pixels.
+- `cross_sect_image_l`: List containing cross-section images.
+- `cross_sect_z_l`: List containing z-coordinates for each cross-section.
+- `cross_sect_l`: List containing `CrossSection` objects.
+- `n_sections`: Number of cross-sections.
+- `z_diff`: Z difference between cross-sections.
+- `pixel_size`: Size of a pixel in meters.
+- `beam_l`: List containing `Beam` objects.
+
+**Methods:**
+- `load_data()`: Loads images and z-coordinates of cross-sections.
+- `find_rot_spacing(angle_step)`: Determines optimal rotation angle for image alignment and grid spacing.
+- `init_coords()`: Initializes the coordinates of beams on the lowest cross-section.
+- `complete_coords(debug)`: Completes the coordinates of each beam across all cross-sections.
+- `plot_cross_sections(id_z)`: Plots cross-sections with ROI for a given `id_z`.
+
+---
+
+##### 2. `CrossSection`
+Manages individual cross-sections of the tomography.
+
+**Attributes:**
+- `z_coord`: Z-coordinate of the cross-section.
+- `shape`: Shape of the beam array for the cross-section.
+- `image`: The original image of the cross-section.
+- `spacing_px`, `spacing_mm`: Spacing in pixels and millimeters.
+- `rot_angle`: Rotation angle for alignment.
+- `image_rot`: Rotated image.
+- `beam_coord_l`: Coordinates of beam centroids.
+
+**Methods:**
+- `simple_plot(rotated)`: Plots the cross-section image.
+- `find_rot(angle_step, plot)`: Finds optimal rotation angle.
+- `find_peaks(nrows, ncols, min_distance)`: Identifies peaks in the image to locate beams.
+- `find_geom()`: Determines geometric properties of beam disposition.
+
+---
+
+##### 3. `Beam`
+Represents individual beams in the array.
+
+**Attributes:**
+- `id_x`, `id_y`: Identifiers for the beam position in the array.
+- `beam_coord_l`: List of centroid coordinates at different z-values.
+- `roi_l`: List of ROIs for each beam.
+- `div_full_angle`: Full angle of beam divergence.
+- `tilt_x`, `tilt_y`: Tilt angles of the beam.
+
+**Methods:**
+- `find_coords(cross_section_l)`: Finds coordinates for the beam in all cross-sections.
+- `find_tilt()`: Determines the tilt of the beam.
+- `find_diverg()`: Finds beam divergence.
+- `plot_trajectory()`: Plots the trajectory of the beam.
+- `plot_rois()`: Plots the regions of interest for the beam at each cross-section.
+
+---
+
+#### Usage
+1. **Initialization**: Create a `Tomography` object with the required file name and beam array shape.
+2. **Data Loading**: Call `load_data()` on the `Tomography` object to load the necessary data.
+3. **Rotation and Spacing**: Use `find_rot_spacing()` to find the optimal rotation angle and grid spacing.
+4. **Coordinate Initialization**: Initialize beam coordinates using `init_coords()`.
+5. **Complete Coordinates**: Complete the beam coordinates for all sections using `complete_coords()`.
+
+#### Note
+- Ensure that the necessary libraries are installed and imported.
+- Adjust parameters like `roi_width` and `angle_step` as needed for your specific dataset.
+- Use the plotting methods for visual inspection and verification of results.
+
+For further assistance or customization, refer to the source code or contact the author, Rui.
