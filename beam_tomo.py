@@ -33,6 +33,61 @@ from matplotlib.patches import Rectangle
 # 3rd party imports
 
 # local library imports
+def find_min_and_argmin(arr):
+    """
+    Returns the maximum value and the index of the maximum value in the array.
+
+    Args:
+    arr (numpy.ndarray): A NumPy array.
+
+    Returns:
+    tuple: (max_value, index_of_max_value)
+    """
+    min_value = np.min(arr)
+    argmin_value = np.argmin(arr)
+    return min_value, argmin_value
+
+def normalise(arr):
+    """
+    Normalises array arr, by subtracting minimum value and dividing by maximum
+
+    return: arr
+    """
+    arr = np.array(arr)
+    arr_ = arr-np.min(arr)
+    norm_arr = arr_ / np.max(arr_)
+    return norm_arr
+
+
+def find_linear_function(point1, point2):
+    """
+    Returns the slope (m) and y-intercept (b) of the linear function passing through two points.
+
+    Args:
+    point1 (tuple): A tuple representing the first point (x1, y1).
+    point2 (tuple): A tuple representing the second point (x2, y2).
+
+    Returns:
+    tuple: (m, b) where m is the slope and b is the y-intercept of the line y = mx + b.
+    """
+    x1, y1 = point1
+    x2, y2 = point2
+
+    # Calculate the slope
+    m = (y2 - y1) / (x2 - x1)
+
+    # Calculate the y-intercept
+    b = y1 - m * x1
+
+    return m, b
+
+# Example usage:
+point1 = (1, 2)
+point2 = (3, 4)
+m, b = find_linear_function(point1, point2)
+print("The linear function is: y =", m, "* x +", b)
+
+
 
 def timeit(func):
     def wrapper(*args, **kwargs):
