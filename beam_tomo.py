@@ -118,84 +118,18 @@ def find_centroid(grayscale_image):
 def gaussian(x, mean, standard_deviation):
     return 1 * np.exp( - (x - mean)**2 / (2 * standard_deviation ** 2))
 
-def get_beam_specs(roi_img, roi_width, debug = False):
-    """
-    Given a 2D array with a region of interest (ROI) around a beam,
-    fit a gaussian beam to the marginal X and marginal Y distributions
-    and retrieve the middle point for X and Y and the sigma of the
-    gaussian fit..
-
-    :param roi_img: (2D array) - region of interest around beam
-    :param roi_width (int) - width of region of interest in pixel units;
-    :return: row_mu, col_mu, sigma
-    """
-
-    #Project intensity map of ROI into x and y --> I(x) = roi_sum_col, I(y) = roi_sum_row
-    roi_sum_row_arr = np.sum(roi_img, axis=0)
-    roi_sum_col_arr = np.sum(roi_img, axis=1)
-
-    #Normalise I(x) and I(y)
-    roi_sum_row_arr = roi_sum_row_arr - np.min(roi_sum_row_arr)
-    roi_sum_row_arr = roi_sum_row_arr / np.max(roi_sum_row_arr)
-    roi_sum_col_arr = roi_sum_col_arr - np.min(roi_sum_col_arr)
-    roi_sum_col_arr = roi_sum_col_arr / np.max(roi_sum_col_arr)
-
-    row_idx_arr = np.arange(0, len(roi_sum_row_arr))
-    col_idx_arr = np.arange(0, len(roi_sum_col_arr))
-
-    try:
-        mean_0 = roi_width/2
-        std_0 = roi_width/5
-        p0 = [mean_0, std_0]
-
-        #fit sum of rows
-        popt_row, _ = curve_fit(gaussian, row_idx_arr, roi_sum_row_arr, p0 = p0)
-        row_mu = int(popt_row[0])
-        row_sigma = int(popt_row[1])
-
-        # fit sum of cols
-        popt_col, _ = curve_fit(gaussian, col_idx_arr, roi_sum_col_arr, p0 = p0)
-        col_mu = int(popt_col[0])
-        col_sigma =  int(popt_col[1])
-
-        #sigma as average of sigma_x and sigma_y
-        sigma = 0.5*(row_sigma + col_sigma)
-
-    except (RuntimeError, ValueError):  # if the fit fails
-        row_mean = int(roi_width / 2)
-        col_mean = int(roi_width / 2)
-        popt_row = [mean_0, std_0]
-        popt_col = [mean_0, std_0]
-        sigma = int(roi_width / 5)
-
-    if debug:
-        plt.figure()
-        plt.plot(row_idx_arr, roi_sum_row_arr, ".", color = "k")
-        y_fit = gaussian(row_idx_arr, *popt_row)
-        plt.plot(row_idx_arr, y_fit, label = "row")
-        plt.xlabel("[px]")
-
-        plt.plot(col_idx_arr, roi_sum_col_arr,".", color = "k")
-        y_fit = gaussian(row_idx_arr, *popt_col)
-        plt.plot(row_idx_arr, y_fit, label = "col")
-        plt.legend()
-
-
-    return row_mu, col_mu, row_sigma, col_sigma
-
-def get_roi(image, center_x, center_y, roi_width_x, roi_width_y):
+def get_roi(image, center_x, center_y, roi_width,):
     """
     Given a 2D array, the function returns a region of interest within the 2D array, specified
     by the center coordinates (x,y) and the width of the region of interest in x and y;
     :param image: 2d numpy array
     :param center_x: int
     :param center_y: int
-    :param roi_width_x: int
-    :param roi_width_y: int
+    :param roi_width: int
     :return: roi: 2d numpy array
     """
-    roi = image[int(center_x - roi_width_x / 2.): int(center_x + roi_width_x / 2.),
-          int(center_y - roi_width_y / 2.): int(center_y + roi_width_y / 2.)]
+    roi = image[int(center_x - roi_width / 2.): int(center_x + roi_width / 2.),
+          int(center_y - roi_width / 2.): int(center_y + roi_width / 2.)]
     return roi
 
 
@@ -212,7 +146,7 @@ class Tomography:
         self.filename = filename
         self.directory = os.getcwd()
         self.shape = shape
-        self.roi_width = roi_width
+        self.roi_width = int(roi_width)
 
         # updated with method load_data
         self.cross_sect_image_l = None  # list with cross section images
@@ -362,48 +296,7 @@ class Tomography:
                 self.beam_l[id_x][id_y].roi_fit_params_l = [[] for _ in range(self.n_sections)]
         print("Coordinates of beam in first layer were determined.")
 
-
-    def complete_beam_coords(self, id_x, id_y, debug = False):
-        beam_i = self.beam_l[id_x][id_y]
-
-        for id_z in range(self.n_sections):
-            #define initial_guess for center of ROI (region of interest)
-            if id_z == 0:
-                coord_x, coord_y, coord_z = beam_i.beam_coord_l[id_z]
-            else:
-                coord_x, coord_y, coord_z = beam_i.beam_coord_l[id_z-1]
-
-            #get beam roi, based on coordinates of beam in lower section
-            image_i = self.cross_sect_l[id_z].image_rot
-            roi_i = get_roi(image_i, coord_x, coord_y,
-                            roi_width_x = self.roi_width,
-                            roi_width_y = self.roi_width)
-            roi_i = gaussian_filter(roi_i, sigma=self.roi_width / 10)  # smoothen ROI for pixel noise
-
-            # establish new coordinates of beam in current z_id, with gaussian fit
-            #row_mu corresponds to a sum over rows --> I(y)
-            #col_mu corrsponds to a sum over cols --> I(x)
-            row_mu, col_mu, row_sigma, col_sigma = get_beam_specs(roi_i, self.roi_width, debug=debug)
-            coord_x = int(coord_x + (col_mu - self.roi_width / 2)) #col_mu --> summed over colums --> x
-            coord_y = int(coord_y + (row_mu - self.roi_width / 2))
-            coord_z = self.cross_sect_z_l[id_z]
-
-            if debug:
-                plt.figure()
-                plt.title(f"z = {coord_z:.2f}mm")
-                plt.imshow(roi_i, origin="lower")
-
-            # update beam.roi_l and beam.beam_coord_l
-            beam_i.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
-            beam_i.beam_width_l[id_z] = np.array([row_sigma, col_sigma])
-            beam_i.roi_l[id_z] = roi_i
-            beam_i.roi_fit_params_l[id_z] = [col_mu, row_mu, col_sigma, row_sigma]
-
-        if debug:
-            print(f"The coordinates of beam ({id_x:.0f},{id_y:.0f}) have been determined for all cross-sections.")
-
-
-    def complete_all_beams_coords(self, debug = False):
+    def complete_all_beam_coords(self, debug = False):
         """
         Calls complete_beam_coords iteratively to cover all beams on the chip
         updates:
@@ -416,68 +309,9 @@ class Tomography:
         """
         for id_x in tqdm(range(self.shape[0])):
             for id_y in range(self.shape[1]):
-                self.complete_beam_coords(id_x, id_y, debug = debug)
-
-
-    def complete_coords_obsolete(self, debug = False):
-        """
-        For each beam, determine the (x,y,z) coordinates at the different cross-sections.
-        v3: The coordinates are determined by the point of max brightness within each region of interest (ROI)
-        v4: The coordinates are determined by a gaussian fit to the marginal intensity distributions, along x and y
-
-        :return:
-        """
-
-        for id_x in tqdm(range(self.shape[0])):
-            for id_y in range(self.shape[1]):
-                roi_width = self.roi_width
-                # for an arbitrary beam, extract the coords in the cross section z_1
-
-                if debug: print(id_x, id_y, "\n")
                 beam_i = self.beam_l[id_x][id_y]
+                beam_i.complete_coords(self.cross_sect_l, self.roi_width, debug = debug)
 
-                for id_z in range(self.n_sections - 1):
-                    # beam info in cross section i
-                    coord_x, coord_y, coord_z = self.beam_l[id_x][id_y].beam_coord_l[id_z]
-                    if id_z == 0: #just for the first layer
-                        image_i = self.cross_sect_l[id_z].image_rot
-                        roi_i = get_roi(image_i, coord_x, coord_y, roi_width, roi_width)
-
-                        #correct coordinates determined with init_coords method
-                        row_mean, col_mean = get_mean_idx(roi_i, roi_width)
-                        coord_x = int(row_mean + (coord_x - roi_width / 2))
-                        coord_y = int(col_mean + (coord_y - roi_width / 2))
-                        coord_z = self.cross_sect_z_l[id_z]
-
-                        beam_i.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
-                        beam_i.roi_l[id_z] = roi_i
-
-                    # beam info in cross section i+1
-                    image_ip1 = self.cross_sect_l[id_z + 1].image_rot
-                    roi_ip1 = get_roi(image_ip1, coord_x, coord_y, roi_width, roi_width)
-                    roi_ip1 = gaussian_filter(roi_ip1, sigma=roi_width / 10)  # smoothen ROI for pixel noise
-
-                    #establish new coordinates
-                    row_mean, col_mean = get_mean_idx(roi_ip1, roi_width, debug = debug)
-
-                    coord_x = int(coord_x + (row_mean - roi_width / 2))
-                    coord_y = int(coord_y + (col_mean  - roi_width / 2))
-                    coord_z = self.cross_sect_z_l[id_z + 1]
-
-                    # update beam_i information (roi_l and beam_coord_l)
-                    roi_ip1 = get_roi(image_ip1, coord_x, coord_y, roi_width, roi_width)
-                    roi_ip1 = gaussian_filter(roi_ip1, sigma=roi_width / 10)  # smoothen ROI for pixel noise
-                    if debug:
-                        plt.figure()
-                        plt.title(f"z = {coord_z:.2f}mm")
-                        plt.imshow(roi_ip1, origin = "lower")
-
-                    #update beam.roi_l and beam.beam_coord_l
-                    beam_i.beam_coord_l[id_z +1 ] = np.array([coord_x, coord_y, coord_z])
-                    beam_i.roi_l[id_z + 1] = roi_ip1
-
-                if debug:
-                    print(f"The coordinates of beam ({id_x:.0f},{id_y:.0f}) have been determined for all cross-sections.")
 
     def plot_cross_section(self, id_z):
         """
@@ -802,8 +636,106 @@ class Beam:
         """
         beam_coord_l = np.array(self.beam_coord_l)
 
+    def find_lin_backg(self, arr, debug=True):
+        """
+        Finds linear function mx+b that represents background.
 
+        return: m, b
+        """
 
+        min_val_m, min_idx_m = find_min_and_argmin(arr[:int(len(arr) / 2)])
+        min_val_p, min_idx_p = find_min_and_argmin(arr[int(len(arr) / 2):])
+
+        p1 = (min_idx_m, min_val_m)
+        p2 = (min_idx_p + int(len(arr) / 2), min_val_p)
+        if debug:
+            print("p1: ", p1)
+            print("p2: ", p2)
+
+        m, b = find_linear_function(p1, p2)
+        return m, b
+
+    def subtract_lin_backg(self,arr, debug=False):
+        """
+        1. Extract background, represented by linear function
+        2. Subtract linear background from arr
+
+        """
+        m, b = self.find_lin_backg(arr, debug=debug)
+        idx_arr = range(len(arr))
+        backg_arr = m * idx_arr + b
+
+        return arr - backg_arr
+
+    def get_gaussian_specs(self, roi_img, roi_width, debug=False):
+        """
+        Given a 2D array with a region of interest (ROI) around a beam,
+        fit a gaussian beam to the marginal X and marginal Y distributions
+        and retrieve the middle point for X and Y and the sigma of the
+        gaussian fit..
+
+        :param roi_img: (2D array) - region of interest around beam
+        :param roi_width (int) - width of region of interest in pixel units;
+        :return: row_mu, col_mu, sigma
+        """
+
+        # Project intensity map of ROI into x and y --> I(x) = roi_sum_col, I(y) = roi_sum_row
+        roi_sum_row_arr = np.sum(roi_img, axis=0)
+        roi_sum_col_arr = np.sum(roi_img, axis=1)
+
+        #get x arr for plotting
+        row_idx_arr, col_idx_arr = range(len(roi_sum_row_arr)), range(len(roi_sum_col_arr))
+
+        # Normalise I(x) and I(y)
+        roi_sum_row_arr = normalise(roi_sum_row_arr)
+        roi_sum_col_arr = normalise(roi_sum_col_arr)
+
+        # Correct background - background has a slope --> mx+b --> subtract background(x) from I(x)
+        roi_sum_row_arr = self.subtract_lin_backg(roi_sum_row_arr, debug=debug)
+        roi_sum_row_arr = normalise(roi_sum_row_arr)
+
+        # m_col, b_col = find_backg_function(roi_sum_col_arr, debug = True)
+        roi_sum_col_arr = self.subtract_lin_backg(roi_sum_col_arr, debug=debug)
+        roi_sum_col_arr = normalise(roi_sum_col_arr)
+
+        try:
+            mean_0 = roi_width / 2
+            std_0 = roi_width / 5
+            p0 = [mean_0, std_0]
+
+            # fit sum of rows
+            popt_row, _ = curve_fit(gaussian, row_idx_arr, roi_sum_row_arr, p0=p0)
+            row_mu = int(popt_row[0])
+            row_sigma = int(popt_row[1])
+
+            # fit sum of cols
+            popt_col, _ = curve_fit(gaussian, col_idx_arr, roi_sum_col_arr, p0=p0)
+            col_mu = int(popt_col[0])
+            col_sigma = int(popt_col[1])
+
+            # sigma as average of sigma_x and sigma_y
+            sigma = 0.5 * (row_sigma + col_sigma)
+
+        except (RuntimeError, ValueError):  # if the fit fails
+            row_mean = int(roi_width / 2)
+            col_mean = int(roi_width / 2)
+            popt_row = [mean_0, std_0]
+            popt_col = [mean_0, std_0]
+            sigma = int(roi_width / 5)
+
+        if debug:
+            plt.figure()
+            plt.plot(row_idx_arr, roi_sum_row_arr, ".", color="k")
+            y_fit = gaussian(row_idx_arr, *popt_row)
+            plt.plot(row_idx_arr, y_fit, label="row")
+            plt.xlabel("[px]")
+
+            plt.plot(col_idx_arr, roi_sum_col_arr, ".", color="k")
+            y_fit = gaussian(row_idx_arr, *popt_col)
+            plt.plot(row_idx_arr, y_fit, label="col")
+            plt.legend()
+
+        return row_mu, col_mu, row_sigma, col_sigma
 
     def plot_trajectory(self, limit_z_fit = False):
         """
@@ -880,6 +812,51 @@ class Beam:
             plt.xlabel("x [px]")
             plt.ylabel("y [px]")
 
+    def complete_coords(self, cross_sect_l, roi_width, debug = False):
+        """
+        Requires cross_sect_l from Tomo instance;
+        Requires roi_width
+
+        """
+        n_sections = len(self.beam_coord_l)
+
+        for id_z in range(n_sections):
+            #define initial_guess for center of ROI (region of interest)
+            if id_z == 0:
+                coord_x, coord_y, coord_z = self.beam_coord_l[id_z]
+            else:
+                coord_x, coord_y, coord_z = self.beam_coord_l[id_z-1]
+
+            #get beam roi, based on coordinates of beam in lower section
+            image_i = cross_sect_l[id_z].image_rot
+            roi_i = get_roi(image_i, coord_x, coord_y,
+                            roi_width_x = roi_width,
+                            roi_width_y = roi_width)
+
+            roi_i = gaussian_filter(roi_i, sigma = roi_width / 10)  # smoothen ROI for pixel noise
+
+
+            # establish new coordinates of beam in current z_id, with gaussian fit
+            #row_mu corresponds to a sum over rows --> I(y)
+            #col_mu corrsponds to a sum over cols --> I(x)
+            row_mu, col_mu, row_sigma, col_sigma = self.get_gaussian_specs(roi_i, roi_width, debug=debug)
+            coord_x = int(coord_x + (col_mu - roi_width / 2)) #col_mu --> summed over colums --> x
+            coord_y = int(coord_y + (row_mu - roi_width / 2))
+            coord_z = self.cross_sect_z_l[id_z]
+
+            if debug:
+                plt.figure()
+                plt.title(f"z = {coord_z:.2f}mm")
+                plt.imshow(roi_i, origin="lower")
+
+            # update beam.roi_l and beam.beam_coord_l
+            self.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
+            self.beam_width_l[id_z] = np.array([row_sigma, col_sigma])
+            self.roi_l[id_z] = roi_i
+            self.roi_fit_params_l[id_z] = [col_mu, row_mu, col_sigma, row_sigma]
+
+        if debug:
+            print(f"The coordinates of beam ({self.id_x:.0f},{self.id_y:.0f}) have been determined for all cross-sections.")
 
 
 
