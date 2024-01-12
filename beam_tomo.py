@@ -58,7 +58,6 @@ def normalise(arr):
     norm_arr = arr_ / np.max(arr_)
     return norm_arr
 
-
 def find_linear_function(point1, point2):
     """
     Returns the slope (m) and y-intercept (b) of the linear function passing through two points.
@@ -80,14 +79,6 @@ def find_linear_function(point1, point2):
     b = y1 - m * x1
 
     return m, b
-
-# Example usage:
-point1 = (1, 2)
-point2 = (3, 4)
-m, b = find_linear_function(point1, point2)
-print("The linear function is: y =", m, "* x +", b)
-
-
 
 def timeit(func):
     def wrapper(*args, **kwargs):
@@ -288,17 +279,21 @@ class Tomography:
         # pass peak coords into each beam, listed in self.beam_l
         for id_x in range(self.shape[0]):
             for id_y in range(self.shape[1]):
-                self.beam_l[id_x][id_y].beam_coord_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
-                self.beam_l[id_x][id_y].beam_coord_l[0] = peak_sorted_arr[id_x, id_y, 0]
-                self.beam_l[id_x][id_y].beam_width_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
+                beam_i = self.beam_l[id_x][id_y]
+                beam_i.beam_coord_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
+                beam_i.beam_coord_l[0] = peak_sorted_arr[id_x, id_y, 0]
+                beam_i.beam_width_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
 
-                self.beam_l[id_x][id_y].roi_l = [[] for _ in range(self.n_sections)] #initialise beam_i.roi_l
-                self.beam_l[id_x][id_y].roi_fit_params_l = [[] for _ in range(self.n_sections)]
+                beam_i.roi_l = [[] for _ in range(self.n_sections)] #initialise beam_i.roi_l
+                beam_i.roi_fit_params_l = [[] for _ in range(self.n_sections)]
+                beam_i.i_row_l = [[] for _ in range(self.n_sections)]
+                beam_i.i_col_l = [[] for _ in range(self.n_sections)]
+
         print("Coordinates of beam in first layer were determined.")
 
-    def complete_all_beam_coords(self, debug = False):
+    def complete_coords_and_widths(self, debug = False):
         """
-        Calls complete_beam_coords iteratively to cover all beams on the chip
+        Calls beam_i.complete_coords iteratively to cover all beams on the chip
         updates:
          1. beam_i.beam_coord_l
          2. beam_i.beam_width_l
@@ -310,8 +305,7 @@ class Tomography:
         for id_x in tqdm(range(self.shape[0])):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
-                beam_i.complete_coords(self.cross_sect_l, self.roi_width, debug = debug)
-
+                beam_i.complete_coords_and_widths(self.cross_sect_l, self.cross_sect_z_l, self.roi_width, debug = debug)
 
     def plot_cross_section(self, id_z):
         """
@@ -378,7 +372,7 @@ class Tomography:
 
         print("beam_i.max_z_fit and beam_i.max_z_idx_fit have been updated in all beams.")
 
-    def find_dir_cos(self, debug):
+    def find_dir_cos(self, debug = False):
         """
         Iterates over beams and calls method of Beam class find_dir_cos.
         The direction cosine attributes of the Beam instances are determined.
@@ -395,6 +389,17 @@ class Tomography:
                 for id_y in range(self.shape[1]):
                     beam_i = self.beam_l[id_x][id_y]
                     beam_i.find_dir_cos(self.pixel_size, debug = debug)
+
+    def find_div(self, debug = False):
+        if self.max_z_idx_fit is None:
+            print("Please check beam trajectories manually and update the maximum z value to be used in fitting.")
+            return None
+
+        else:
+            for id_x in range(self.shape[0]):
+                for id_y in range(self.shape[1]):
+                    beam_i = self.beam_l[id_x][id_y]
+                    beam_i.find_div(self.pixel_size, debug = debug)
 
 
 class Cross_Section:
@@ -536,23 +541,23 @@ class Beam:
         self.beam_width_l = list() # sigma of gaussian fit --> radius at 1/e^2
         self.roi_l = list() #list of 2d arrays with ROIs of each beam;
         self.roi_fit_params_l = list() #arr is initiaed by tomo.init_coords() and filled by tomo.complete_beam_coords()
-                                        #[col_mu, row_mu, col_sigma, row_sigma]
+        self.i_row_l = list() #stores I(x) within ROI, for each cross section of the beam
+        self.i_col_l = list() #stores I(y) within ROI, ...
+                           #[col_mu, row_mu, col_sigma, row_sigma]
         #
         self.div_full_angle = None
 
         # direction cosines
-        self.e_x = None
+        self.e_x = None #updated by beam_i.find_dir_cos()
         self.e_y = None
         self.e_z = None
 
+        # divergence (deg)
+        self.div_x = None #updated by beam_i.find_div()
+        self.div_y = None
+
     def __repr__(self):
         return f"Beam object, id_x = {self.id_x}, id_y = {self.id_y}"
-
-    def find_coords(self, cross_section_l):
-        n_layers = len(cross_section_l)
-
-        for i in range(n_layers):
-            print("ok")
 
     def find_dir_cos(self, px_size, debug = False):
         """
@@ -630,11 +635,63 @@ class Beam:
             print(f"e_y = {e_y:.2f} --> beta = {beta:.2f}deg")
             print(f"e_z = {e_z:.2f} --> gamma = {gamma:.2f}deg")
 
-    def find_div(self):
+    def find_div(self, pixel_size, limit_z_fit = True, debug = False):
         """
         Find beam full-angle divergence at 1/e^2
         """
         beam_coord_l = np.array(self.beam_coord_l)
+        # tomo.find_div(debug = True) #loops over beam method beam_i.find_div
+        beam_coord = np.array(self.beam_coord_l)
+
+        if limit_z_fit:  # excludes trajectory points beyond a certain z value.
+            try:
+                max_z_id = self.max_z_idx_fit
+            except AttributeError:
+                print(f"Please define the max_z_id with tomo.set_max_z() to limit the fitting to valid cross sections.")
+        else:
+            max_z_id = len(self.beam_coord_l)
+
+        z_arr = beam_coord[:max_z_id, 2]
+        z_px_arr = (z_arr * 10 ** -3) / pixel_size
+        beam_width_l = np.array(self.beam_width_l)
+        width_y_arr = beam_width_l[:max_z_id, 0]
+        width_x_arr = beam_width_l[:max_z_id, 1]
+
+        # y - fit
+        linear_f = lambda x, m, b: m * x + b
+        popt, _ = curve_fit(linear_f, z_px_arr, width_y_arr, )
+        width_y_fit_arr = linear_f(z_px_arr, *popt)
+        m_y = popt[0]
+        theta_y = np.degrees(np.arctan(m_y))
+
+        # x - fit - sum over col
+        popt, _ = curve_fit(linear_f, z_px_arr, width_x_arr, )
+        width_x_fit_arr = linear_f(z_px_arr, *popt)
+        m_x = popt[0]
+        theta_x = np.degrees(np.arctan(m_x))
+
+        # Update beam_i.attributes
+        self.div_x = 2*theta_x #full angle = 2 * half-angle
+        self.div_y = 2*theta_y
+
+        print(f"The divergence angles of the beam idx={self.id_x}, idy = {self.id_y} have been updated:")
+        print(f"div_x = {self.div_x:.3f}deg, e_y = {self.div_y:.3f}deg")
+
+        # Plot
+        if debug:
+            f, ax = plt.subplots()
+            plt.title(
+                f"Debug - find_div,\n m_x = {m_x:.2f}, theta_x = {theta_x:.2f}deg,\nm_y = {m_y:.2f}, theta_y = {theta_y:.2f}deg,")
+            # ax.plot(z_px_arr, width_x_arr, label = "x")
+            ax.plot(z_px_arr, width_y_arr, ".", label="y", color = "tab:blue")
+            ax.plot(z_px_arr, width_y_fit_arr, label="y-fit", color = "tab:blue")
+
+            ax.plot(z_px_arr, width_x_arr, ".", label="x", color = "tab:orange")
+            ax.plot(z_px_arr, width_x_fit_arr, label="x-fit", color = "tab:orange")
+            ax.set_xlabel("Z[px]")
+            ax.set_ylabel("width [px]")
+            ax.legend()
+            plt.tight_layout()
 
     def find_lin_backg(self, arr, debug=True):
         """
@@ -676,12 +733,17 @@ class Beam:
 
         :param roi_img: (2D array) - region of interest around beam
         :param roi_width (int) - width of region of interest in pixel units;
-        :return: row_mu, col_mu, sigma
+        :return: i_row, i_col, row_mu, col_mu, row_sigma, col_sigma
         """
 
         # Project intensity map of ROI into x and y --> I(x) = roi_sum_col, I(y) = roi_sum_row
         roi_sum_row_arr = np.sum(roi_img, axis=0)
         roi_sum_col_arr = np.sum(roi_img, axis=1)
+
+        #if debug:
+        #    plt.figure()
+        #    plt.title("Debug beam_i.get_gaussian_specs- ROI of beam")
+        #   plt.imshow(roi_img, origin = "lower")
 
         #get x arr for plotting
         row_idx_arr, col_idx_arr = range(len(roi_sum_row_arr)), range(len(roi_sum_col_arr))
@@ -698,18 +760,21 @@ class Beam:
         roi_sum_col_arr = self.subtract_lin_backg(roi_sum_col_arr, debug=debug)
         roi_sum_col_arr = normalise(roi_sum_col_arr)
 
+        i_row = roi_sum_row_arr #sum along cols
+        i_col = roi_sum_col_arr
+
         try:
             mean_0 = roi_width / 2
             std_0 = roi_width / 5
             p0 = [mean_0, std_0]
 
             # fit sum of rows
-            popt_row, _ = curve_fit(gaussian, row_idx_arr, roi_sum_row_arr, p0=p0)
+            popt_row, _ = curve_fit(gaussian, row_idx_arr, i_row, p0=p0)
             row_mu = int(popt_row[0])
             row_sigma = int(popt_row[1])
 
             # fit sum of cols
-            popt_col, _ = curve_fit(gaussian, col_idx_arr, roi_sum_col_arr, p0=p0)
+            popt_col, _ = curve_fit(gaussian, col_idx_arr, i_col, p0=p0)
             col_mu = int(popt_col[0])
             col_sigma = int(popt_col[1])
 
@@ -725,6 +790,7 @@ class Beam:
 
         if debug:
             plt.figure()
+            plt.title("Debug - beam_i.get_gaussian_specs()")
             plt.plot(row_idx_arr, roi_sum_row_arr, ".", color="k")
             y_fit = gaussian(row_idx_arr, *popt_row)
             plt.plot(row_idx_arr, y_fit, label="row")
@@ -735,7 +801,8 @@ class Beam:
             plt.plot(row_idx_arr, y_fit, label="col")
             plt.legend()
 
-        return row_mu, col_mu, row_sigma, col_sigma
+        #return row_mu, col_mu, row_sigma, col_sigma
+        return i_row, i_col, row_mu, col_mu, row_sigma, col_sigma
 
     def plot_trajectory(self, limit_z_fit = False):
         """
@@ -812,7 +879,50 @@ class Beam:
             plt.xlabel("x [px]")
             plt.ylabel("y [px]")
 
-    def complete_coords(self, cross_sect_l, roi_width, debug = False):
+    def plot_gauss_fit(self, limit_z_fit = False):
+        """
+        Plot for each cross section of the beam, the ROI, the intensity profiles in x and y and
+        respective gaussian fits.
+
+        """
+        if limit_z_fit: #excludes trajectory points beyond a certain z value.
+            try:
+                max_id_z = self.max_z_idx_fit
+            except AttributeError:
+                print(f"Please define the max_z_id with tomo.set_max_z() to limit the fitting to valid cross sections.")
+        else:
+            max_id_z = len(self.beam_coord_l)
+
+        for id_z in range(max_id_z):
+            roi_i = self.roi_l[id_z]
+            col_mu, row_mu, col_sigma, row_sigma = self.roi_fit_params_l[id_z]  # fit params
+            i_col_arr = self.i_col_l[id_z]  # sum over columns
+            i_row_arr = self.i_row_l[id_z]  # sum over lines
+            idx_arr = np.arange(len(i_col_arr))
+
+            # Plots
+            f, ax = plt.subplots(ncols=2, nrows=1, figsize=(8, 4))
+            ax[0].imshow(roi_i, origin="lower")
+            ax[0].set_xlabel("Y [px]")
+            ax[0].set_ylabel("X [px]")
+            ax[0].set_title(f"id_x = {self.id_x},  id_y = {self.id_y}, id_z = {id_z}")
+
+            # plot sum_col - x
+            ax[1].plot(idx_arr, i_col_arr, ".", label="sum_col - x", color="tab:blue")
+            col_fit = gaussian(idx_arr, col_mu, col_sigma)
+            ax[1].plot(idx_arr, col_fit, color="tab:blue")
+
+            # plot sum_col - y
+            ax[1].plot(idx_arr, i_row_arr, ".", label="sum_row - y", color="tab:orange")
+            row_fit = gaussian(idx_arr, row_mu, row_sigma)
+            ax[1].plot(idx_arr, row_fit, color="tab:orange")
+
+            ax[1].set_title(
+                f"$\mu_x = {{{col_mu:.1f}}},  \sigma_x = {{{col_sigma:.1f}}}$ \n $\mu_y = {{{row_mu:.1f}}},  \sigma_y = {{{row_sigma:.1f}}}$")
+            ax[1].set_xlabel("Pos [px]")
+            ax[1].legend()
+
+    def complete_coords_and_widths(self, cross_sect_l, cross_sect_z_l, roi_width, debug = False):
         """
         Requires cross_sect_l from Tomo instance;
         Requires roi_width
@@ -830,30 +940,30 @@ class Beam:
             #get beam roi, based on coordinates of beam in lower section
             image_i = cross_sect_l[id_z].image_rot
             roi_i = get_roi(image_i, coord_x, coord_y,
-                            roi_width_x = roi_width,
-                            roi_width_y = roi_width)
+                            roi_width = roi_width)
 
             roi_i = gaussian_filter(roi_i, sigma = roi_width / 10)  # smoothen ROI for pixel noise
-
 
             # establish new coordinates of beam in current z_id, with gaussian fit
             #row_mu corresponds to a sum over rows --> I(y)
             #col_mu corrsponds to a sum over cols --> I(x)
-            row_mu, col_mu, row_sigma, col_sigma = self.get_gaussian_specs(roi_i, roi_width, debug=debug)
+            i_row, i_col, row_mu, col_mu, row_sigma, col_sigma = self.get_gaussian_specs(roi_i, roi_width, debug=debug)
             coord_x = int(coord_x + (col_mu - roi_width / 2)) #col_mu --> summed over colums --> x
             coord_y = int(coord_y + (row_mu - roi_width / 2))
-            coord_z = self.cross_sect_z_l[id_z]
+            coord_z = cross_sect_z_l[id_z]
 
             if debug:
                 plt.figure()
-                plt.title(f"z = {coord_z:.2f}mm")
+                plt.title(f"Debug - beam_i.complete_coords_widths,\nz= {coord_z:.2f}mm")
                 plt.imshow(roi_i, origin="lower")
 
             # update beam.roi_l and beam.beam_coord_l
             self.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
-            self.beam_width_l[id_z] = np.array([row_sigma, col_sigma])
+            self.beam_width_l[id_z] = np.array([row_sigma, col_sigma]) #row_sigma --> sum over rows --> I(y)
             self.roi_l[id_z] = roi_i
             self.roi_fit_params_l[id_z] = [col_mu, row_mu, col_sigma, row_sigma]
+            self.i_row_l[id_z] = i_row
+            self.i_col_l[id_z] = i_col
 
         if debug:
             print(f"The coordinates of beam ({self.id_x:.0f},{self.id_y:.0f}) have been determined for all cross-sections.")
