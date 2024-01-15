@@ -157,6 +157,9 @@ class Tomography:
         self.max_z_fit = None
         self.max_z_idx_fit = None
 
+        #mean direction cosine of beams
+        self.mean_dir_cos = None # Updated by tomo.find_mean_dir_cos()
+
 
     def __str__(self):
         return f"""Tomography measurement:\n
@@ -350,6 +353,58 @@ class Tomography:
 
         return f, ax
 
+    def plot_div(self):
+        x_values = np.arange(0, self.shape[0])
+        y_values = np.arange(1, self.shape[1])
+        x, y = np.meshgrid(x_values, y_values, indexing="ij")
+
+        div_x_arr = [[self.beam_l[id_x][id_y].div_x for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_y_arr = [[self.beam_l[id_x][id_y].div_y for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+
+        # Plot using a colormap -div x
+        plt.figure(figsize=(8, 3))
+        colormap = plt.pcolormesh(y, x, div_x_arr, cmap='viridis', shading='auto')
+        for (i, j), val in np.ndenumerate(div_x_arr):
+            plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
+        plt.colorbar(colormap)
+        plt.xlabel('y')
+        plt.ylabel('x')
+        plt.title('Div_x - full angle [deg]')
+        plt.show()
+        plt.tight_layout()
+
+        # Plot using a colormap -div y
+        plt.figure(figsize=(8, 3))
+        colormap = plt.pcolormesh(y, x, div_y_arr, cmap='viridis', shading='auto')
+        for (i, j), val in np.ndenumerate(div_y_arr):
+            plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
+        plt.colorbar(colormap)
+        plt.xlabel('y')
+        plt.ylabel('x')
+        plt.title('Div_y - full angle [deg]')
+        plt.show()
+        plt.tight_layout()
+
+    def plot_dir(self):
+        fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
+                                   figsize=(2 * self.shape[1], 2 * self.shape[0]),
+                                   nrows=self.shape[0],
+                                   ncols=self.shape[1])
+
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                beam_i = self.beam_l[id_x][id_y]
+                e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
+
+                theta = np.arccos(e_z)
+                phi = np.arctan(e_y / e_x)
+                label = f"{id_x:.0f}x{id_y:.0f}, $\\theta = {{ {np.degrees(theta):.1f} }}^\circ, \\phi = {{ {np.degrees(phi):.1f} }}^\circ$"
+
+                ax_arr[id_x][id_y].plot(phi, np.degrees(theta), "o")
+                ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
+                ax_arr[id_x][id_y].set_rlim(0, 15)
+        plt.tight_layout()
+
     def set_max_z(self, max_z):
         """
         Establish max z-value [mm] of cross sections to be used in fitting to extract tilt_x, tilt_y, div_x, div_y
@@ -372,35 +427,59 @@ class Tomography:
 
         print("beam_i.max_z_fit and beam_i.max_z_idx_fit have been updated in all beams.")
 
-    def find_dir_cos(self, debug = False):
+    def find_dir_cos(self, limit_z_fit = True, debug = False):
         """
         Iterates over beams and calls method of Beam class find_dir_cos.
         The direction cosine attributes of the Beam instances are determined.
 
+        limit_z_fit [bool] - is the fit limited to the useful cross sections?
+
         :param debug:
         :return: None
         """
-        if self.max_z_idx_fit is None:
-            print("Please check beam trajectories manually and update the maximum z value to be used in fitting.")
-            return None
 
-        else:
-            for id_x in range(self.shape[0]):
-                for id_y in range(self.shape[1]):
-                    beam_i = self.beam_l[id_x][id_y]
-                    beam_i.find_dir_cos(self.pixel_size, debug = debug)
+        if limit_z_fit:
+            print("The fit is limited to the useful cross sections, defined by tomo.set_max_z()")
 
-    def find_div(self, debug = False):
-        if self.max_z_idx_fit is None:
-            print("Please check beam trajectories manually and update the maximum z value to be used in fitting.")
-            return None
+            if self.max_z_idx_fit == None:
+                print("The useful cross sections have not been defined. Call tomo.set_max_z()")
+                return None
 
-        else:
-            for id_x in range(self.shape[0]):
-                for id_y in range(self.shape[1]):
-                    beam_i = self.beam_l[id_x][id_y]
-                    beam_i.find_div(self.pixel_size, debug = debug)
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                beam_i = self.beam_l[id_x][id_y]
+                beam_i.find_dir_cos(self.pixel_size, limit_z_fit = limit_z_fit, debug = debug)
 
+    def find_mean_dir_cos(self):
+        dir_cos_store = list()
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                beam_i = self.beam_l[id_x][id_y]
+                e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
+                dir_cos_store.append([e_x, e_y, e_z])
+
+        dir_cos_store = np.array(dir_cos_store)
+        vec_mean = np.mean(dir_cos_store, axis=0)
+        vec_mean = vec_mean / np.linalg.norm(vec_mean)
+
+        self.mean_dir_cos = vec_mean
+
+        print(f"Calculated average direction cosine [e_x, e_y, e_z] = [{vec_mean[0]:.2f}, {vec_mean[1]:.2f}, {vec_mean[2]:.2f}]")
+
+        return vec_mean
+
+    def find_div(self, limit_z_fit = True, debug = False):
+        if limit_z_fit:
+            print("The fit is limited to the useful cross sections, defined by tomo.set_max_z()")
+
+            if self.max_z_idx_fit == None:
+                print("The useful cross sections have not been defined. Call tomo.set_max_z()")
+                return None
+
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                beam_i = self.beam_l[id_x][id_y]
+                beam_i.find_div(self.pixel_size, limit_z_fit = limit_z_fit, debug = debug)
 
 class Cross_Section:
     def __init__(self, z_coord, shape, image):
@@ -531,6 +610,7 @@ class Cross_Section:
         coord_y = None
         return coord_x, coord_y
 
+
 class Beam:
     def __init__(self, id_x, id_y):
         self.id_x = int(id_x)
@@ -559,7 +639,7 @@ class Beam:
     def __repr__(self):
         return f"Beam object, id_x = {self.id_x}, id_y = {self.id_y}"
 
-    def find_dir_cos(self, px_size, debug = False):
+    def find_dir_cos(self,  px_size, limit_z_fit = True, debug = False):
         """
         Find direction cosines for the beam:
         e_x = v_x / |v|
@@ -569,10 +649,13 @@ class Beam:
         Find tilt of the beam with respect to z axis.
         """
 
-        if self.max_z_idx_fit is None: #max_z_idx_fit limits the observations used for fitting the beam route.
-            max_z_idx = len(self.beam_coord_l)
+        if limit_z_fit:  # excludes trajectory points beyond a certain z value.
+            try:
+                max_z_idx = self.max_z_idx_fit
+            except AttributeError:
+                print(f"Please define the max_z_id with tomo.set_max_z() to limit the fitting to valid cross sections.")
         else:
-            max_z_idx = self.max_z_idx_fit
+            max_z_idx = len(self.beam_coord_l)
 
         # organise data
         x_arr = np.array(self.beam_coord_l)[:max_z_idx, 0]
@@ -674,11 +757,11 @@ class Beam:
         self.div_x = 2*theta_x #full angle = 2 * half-angle
         self.div_y = 2*theta_y
 
-        print(f"The divergence angles of the beam idx={self.id_x}, idy = {self.id_y} have been updated:")
-        print(f"div_x = {self.div_x:.3f}deg, e_y = {self.div_y:.3f}deg")
-
         # Plot
         if debug:
+            print(f"The divergence angles of the beam idx={self.id_x}, idy = {self.id_y} have been updated:")
+            print(f"div_x = {self.div_x:.3f}deg, e_y = {self.div_y:.3f}deg")
+
             f, ax = plt.subplots()
             plt.title(
                 f"Debug - find_div,\n m_x = {m_x:.2f}, theta_x = {theta_x:.2f}deg,\nm_y = {m_y:.2f}, theta_y = {theta_y:.2f}deg,")
@@ -804,7 +887,7 @@ class Beam:
         #return row_mu, col_mu, row_sigma, col_sigma
         return i_row, i_col, row_mu, col_mu, row_sigma, col_sigma
 
-    def plot_trajectory(self, limit_z_fit = False):
+    def plot_trajectory(self, limit_z_fit = True):
         """
         Plot the x-z and y-z diagrams of the beam trajectory
 
@@ -836,7 +919,7 @@ class Beam:
 
         return f, ax
 
-    def plot_width(self, limit_z_fit = False):
+    def plot_width(self, limit_z_fit = True):
         beam_coord = np.array(self.beam_coord_l)
 
         if limit_z_fit: #excludes trajectory points beyond a certain z value.
@@ -967,7 +1050,6 @@ class Beam:
 
         if debug:
             print(f"The coordinates of beam ({self.id_x:.0f},{self.id_y:.0f}) have been determined for all cross-sections.")
-
 
 
 """
