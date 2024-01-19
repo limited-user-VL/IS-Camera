@@ -1,0 +1,106 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\title{Manual for Vitrealab Light Chips Evaluation Code}
+\author{Author: Rui}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Overview}
+This project is used to evaluate the output of Vitrealab light chips. It aims to extract the tilt angles (\texttt{tilt\_x}, \texttt{tilt\_y}) and beam divergence (\texttt{beam\_div\_x}, \texttt{beam\_div\_y}) for each beam in the beam array.
+
+\section{Class Descriptions}
+
+\subsection{Tomography}
+Contains all the acquired images.
+\subsubsection*{Attributes:}
+\begin{itemize}
+    \item \texttt{filename} - File location and name.
+    \item \texttt{directory} - Current working directory.
+    \item \texttt{shape} - Shape of the beam array (rows, cols).
+    \item \texttt{roi\_width} - Width of the region of interest.
+    \item \texttt{cross\_sect\_image\_l} - List with cross-section images.
+    \item \texttt{cross\_sect\_z\_l} - List with z coordinates of cross-sections.
+    \item \texttt{cross\_sect\_l} - List with cross-section objects.
+    \item \texttt{n\_sections} - Number of cross sections.
+    \item \texttt{z\_diff} - Z difference between cross-sections.
+    \item \texttt{pixel\_size} - Pixel size in meters.
+    \item \texttt{beam\_l} - List with all beam objects.
+    \item \texttt{max\_z\_fit} - Maximum z coordinate for fit.
+    \item \texttt{max\_z\_idx\_fit} - Index of the maximum z coordinate for fit.
+\end{itemize}
+
+\subsubsection*{Methods:}
+\begin{itemize}
+    \item \texttt{\_\_init\_\_} - Initializes the Tomography measurement.
+    \item \texttt{\_\_str\_\_} - String representation.
+    \item \texttt{\_\_repr\_\_} - Representation of the object.
+    \item \texttt{load\_data} - Loads images and z coordinates.
+    \item \texttt{find\_rot\_spacing} - Finds rotation angle and grid spacing.
+    \item \texttt{init\_coords} - Initializes beam coordinates.
+    \item \texttt{complete\_beam\_coords} - Completes beam coordinates for all sections.
+    \item \texttt{complete\_all\_beams\_coords} - Iteratively completes all beam coordinates.
+    \item \texttt{plot\_cross\_section} - Plots cross-sections with ROIs.
+    \item \texttt{set\_max\_z} - Sets the maximum z-value for fitting.
+    \item \texttt{find\_dir\_cos} - Finds direction cosines for beams.
+\end{itemize}
+
+\subsection{Cross\_Section}
+Contains image and rotated image, and z-coordinate of respective cross-section.
+\subsubsection*{Attributes:}
+\begin{itemize}
+    \item \texttt{z\_coord} - Z coordinate of the cross-section.
+    \item \texttt{shape} - Shape of the cross-section.
+    \item \texttt{image} - Image of the cross-section.
+    \item \texttt{spacing\_px} - Spacing in pixels.
+    \item \texttt{spacing\_mm} - Spacing in millimeters.
+    \item \texttt{rot\_angle} - Rotation angle.
+    \item \texttt{image\_rot} - Rotated image.
+    \item \texttt{beam\_coord\_l} - List of beam coordinates.
+\end{itemize}
+
+\subsubsection*{Methods:}
+\begin{itemize}
+    \item \texttt{\_\_init\_\_} - Initializes the cross-section.
+    \item \texttt{\_\_str\_\_} - String representation.
+    \item \texttt{\_\_repr\_\_} - Representation of the object.
+    \item \texttt{simple\_plot} - Plots the cross-section.
+    \item \texttt{find\_rot} - Finds the optimal rotation angle.
+   
+
+ \item \texttt{find\_peaks} - Finds the peaks in the cross-section.
+    \item \texttt{find\_geom} - Finds geometric properties of the beam disposition.
+    \item \texttt{id\_to\_coord} - Converts beam index to coordinates.
+\end{itemize}
+
+\subsection{Beam}
+Contains beam information including position, tilt, and divergence.
+\subsubsection*{Attributes:}
+\begin{itemize}
+    \item \texttt{id\_x}, \texttt{id\_y} - Beam identifiers.
+    \item \texttt{beam\_coord\_l} - List of beam centroid coordinates.
+    \item \texttt{beam\_width\_l} - List of beam widths.
+    \item \texttt{roi\_l} - List of regions of interest for each beam.
+    \item \texttt{div\_full\_angle} - Full angle of beam divergence.
+    \item \texttt{e\_x}, \texttt{e\_y}, \texttt{e\_z} - Direction cosines.
+\end{itemize}
+
+\subsubsection*{Methods:}
+\begin{itemize}
+    \item \texttt{\_\_init\_\_} - Initializes the beam.
+    \item \texttt{\_\_repr\_\_} - Representation of the object.
+    \item \texttt{find\_coords} - Finds the coordinates of the beam.
+    \item \texttt{find\_dir\_cos} - Finds the direction cosines of the beam.
+    \item \texttt{find\_div} - Finds the divergence of the beam.
+    \item \texttt{plot\_trajectory} - Plots the trajectory of the beam.
+    \item \texttt{plot\_width} - Plots the width of the beam.
+    \item \texttt{plot\_rois} - Plots regions of interest of the beam.
+\end{itemize}
+
+\end{document}
