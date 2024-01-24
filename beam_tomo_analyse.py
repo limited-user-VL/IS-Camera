@@ -16,6 +16,8 @@ class Beam: contains (id_x, id_y) and (tilt_x, tilt_y) and (beam_div_x, beam_div
 import pickle
 import numpy as np
 import os
+from datetime import datetime
+
 import skimage
 from skimage import transform as t
 from skimage import exposure as e
@@ -212,17 +214,17 @@ class Tomography:
         # 1. Extract rotation angle, using the first cross-section (lowest z-value)
         print("Extracting rotation angle for the lowest z cross section.")
         cross_sect_i = self.cross_sect_l[0]
-        opt_angle = cross_sect_i.find_rot(angle_min=angle_min, angle_max=angle_max,
-                                          angle_step=angle_step, plot=False)
+        opt_angle = cross_sect_i.find_rot(angle_min = angle_min, angle_max = angle_max,
+                                          angle_step = angle_step, plot = False)
         print(f"Optimal rotation angle = {opt_angle:.2f}deg")
 
         # 2. Extract grid spacing;
         print("Extracting the grid spacing")
         cross_sect_i = self.cross_sect_l[0]
-        peak_arr = cross_sect_i.find_peaks(nrows=3, ncols=10, min_distance=100)
+        peak_arr = cross_sect_i.find_peaks(exp_num_peaks = int(self.shape[0]*self.shape[1]), min_distance = 50)
 
         # label beams - line_id, col_id
-        kmeans_rows = KMeans(n_clusters=3)
+        kmeans_rows = KMeans(n_clusters=self.shape[0])
         kmeans_rows.fit(peak_arr[:, 0].reshape(-1, 1))  # kmeans, 1 cluster per row
         coords_rows = kmeans_rows.cluster_centers_
         mean_delta_x = np.mean(np.diff(np.sort(coords_rows, axis=0), axis=0))  # spacing between rows
@@ -231,8 +233,8 @@ class Tomography:
 
         # 3. The rotation angle, rotated images and spacing are written to the cross-section objects
         print("Updating the rotation angle and rotated image for each cross section.")
-        self.spacing_px = spacing
-        self.spacing_mm = spacing * self.pixel_size * 10**3
+        self.spacing_px = int(spacing)
+        self.spacing_mm = float(spacing * self.pixel_size * 10**3)
         for cross_sect_i in tqdm(self.cross_sect_l):
             cross_sect_i.rot_angle = opt_angle
             cross_sect_i.image_rot = t.rotate(cross_sect_i.image, cross_sect_i.rot_angle)
@@ -255,7 +257,7 @@ class Tomography:
         image_i = self.cross_sect_l[0].image_rot
 
         #find peaks
-        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.8))
+        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.5))
         peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
 
         #sort peaks to match the index of the beams
@@ -354,13 +356,13 @@ class Tomography:
 
         return f, ax
 
-    def plot_div(self):
+    def plot_div(self, debug = False, save = False):
         """
         Plots 2 grids with the x-divergence and y-divergence of the beams plotted in an array of
         colormaps.
-
         """
 
+        #generate grid points
         x_values = np.arange(0, self.shape[0])
         y_values = np.arange(1, self.shape[1])
         x, y = np.meshgrid(x_values, y_values, indexing="ij")
@@ -369,30 +371,42 @@ class Tomography:
         div_y_arr = [[self.beam_l[id_x][id_y].div_y for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
 
         # Plot using a colormap -div x
-        plt.figure(figsize=(8, 3))
+        f1, ax = plt.subplots(figsize=(8, 3))
         colormap = plt.pcolormesh(y, x, div_x_arr, cmap='viridis', shading='auto')
         for (i, j), val in np.ndenumerate(div_x_arr):
             plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
-        plt.colorbar(colormap)
-        plt.xlabel('y')
-        plt.ylabel('x')
-        plt.title('Div_x - full angle [deg]')
-        plt.show()
+
+        ax.colorbar(colormap)
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
+        ax.set_title('Div_x - full angle [deg]')
         plt.tight_layout()
 
         # Plot using a colormap -div y
-        plt.figure(figsize=(8, 3))
+        f2, ax = plt.subplots(figsize=(8, 3))
         colormap = plt.pcolormesh(y, x, div_y_arr, cmap='viridis', shading='auto')
         for (i, j), val in np.ndenumerate(div_y_arr):
             plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
-        plt.colorbar(colormap)
-        plt.xlabel('y')
-        plt.ylabel('x')
-        plt.title('Div_y - full angle [deg]')
-        plt.show()
+        ax.colorbar(colormap)
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
+        ax.set_title('Div_y - full angle [deg]')
         plt.tight_layout()
 
-    def plot_dir(self):
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H:%M")
+            image_name_1 = f"{datetime_string}_beam_div_x.png"
+            f1.savefig(image_name_1, dpi = 300)
+            print(f"Figure was saved in home directory as {image_name_1}.")
+
+            image_name_2 = f"{datetime_string}_beam_div_y.png"
+            f2.savefig(image_name_2, dpi=300)
+            print(f"Figure was saved in home directory as {image_name_2}.")
+
+
+    def plot_dir(self, save = False):
         fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
                                    figsize=(2 * self.shape[1], 2 * self.shape[0]),
                                    nrows=self.shape[0],
@@ -410,7 +424,17 @@ class Tomography:
                 ax_arr[id_x][id_y].plot(phi, np.degrees(theta), "o")
                 ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
                 ax_arr[id_x][id_y].set_rlim(0, 15)
+
         plt.tight_layout()
+
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H:%M")
+            image_name = f"{datetime_string}_beam_directions.png"
+            plt.savefig(image_name, dpi = 300)
+            print(f"Figure was saved in home directory as {image_name}.")
+
 
     def set_max_z(self, max_z):
         """
@@ -465,8 +489,6 @@ class Tomography:
         limit_z_fit = True - limits the fits in the coordinates and width calculations
         debug = True - produces extra prints and plots for debugging purposes
 
-
-
         """
 
         if limit_z_fit:
@@ -514,7 +536,7 @@ class Tomography:
         self.find_div(limit_z_fit = limit_z_fit, debug = debug)
         self.find_mean_dir_cos()
 
-    def plot_dir_single(self):
+    def plot_dir_single(self, save = False):
         """
         Plots the direction of all beams in a single polar plot.
         #TODO Rotate reference frame such that the average direction coincides with
@@ -558,6 +580,12 @@ class Tomography:
         phi_rad = np.arctan(vec[1] / vec[0])
         # ax.plot(phi_rad, theta_deg, ".", color = "green")
         # In the future apply transform to all points that maps the average vector to 0,0,1.
+
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H:%M")
+            plt.savefig(f"{datetime_string}_beam_directions_single.png", dpi=300)
 
 
 class Cross_Section:
@@ -637,10 +665,7 @@ class Cross_Section:
 
         return angle_opt
 
-    def find_peaks(self, nrows=3, ncols=10, min_distance=50):
-        """
-        obsolete, delete;
-        """
+    def find_peaks(self, exp_num_peaks = 50, min_distance=50):
         """
         Find the coordinates of the beams in a cross-section;
         Updates the list self.beam_coord_l;
@@ -648,14 +673,11 @@ class Cross_Section:
         Parameters:
         - rows (int): number of expected rows (horizontal)
         - columns (int): number of expected columns (vertical)
-        - min_distance: minimum distance between the center of the beams;        
-
+        - min_distance: minimum distance between the center of the beams;
         """
 
         if self.image_rot is not None:
             image = self.image_rot
-            exp_num_peaks = nrows * ncols
-
             peak_arr = feature.peak_local_max(image, num_peaks=exp_num_peaks, min_distance=min_distance)
             self.beam_coord_l = peak_arr
         else:
