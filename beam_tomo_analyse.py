@@ -526,7 +526,7 @@ class Tomography:
             image_name_2 = f"{datetime_string}_beam_div_y.png"
             path_name_2 = os.path.join(folder_name, image_name_2)
             f2.savefig(path_name_2, dpi=300)
-            print(f"Figure was saved in home directory as {image_name_2}.")
+            print(f"Figure was saved as {path_name_2}.")
 
     def plot_dir(self, save = False):
         fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
@@ -811,23 +811,31 @@ class Beam:
             f, ax = plt.subplots(nrows=1, ncols=3, figsize=(8, 3))
             ax[0].plot(t_arr, x_arr, ".")
             ax[0].plot(t_arr, pos(t_arr, x0, v_x))
-            ax[0].set_title(f"v_x = {v_x:.2f}")
+            ax[0].set_title(f"v_x = {v_x:.2f}, e_x = {e_x:.2f}")
             ax[0].set_xlabel("Step idx [int]")
             ax[0].set_ylabel("Position [px]")
 
             ax[1].plot(t_arr, y_arr, ".")
             ax[1].plot(t_arr, pos(t_arr, y0, v_y))
-            ax[1].set_title(f"v_y = {v_y:.2f}")
+            ax[1].set_title(f"v_y = {v_y:.2f}, e_y = {e_y:.2f}")
             ax[1].set_xlabel("Step idx [int]")
             ax[1].set_ylabel("Position [px]")
 
             ax[2].plot(t_arr, z_arr, ".")
             ax[2].plot(t_arr, pos(t_arr, z0, v_z))
-            ax[2].set_title(f"v_z = {v_z:.2f}")
+            ax[2].set_title(f"v_z = {v_z:.2f}, e_z = {e_z:.2f}")
             ax[2].set_ylabel("Position [px]")
             ax[2].set_xlabel("Step idx [int]")
-
             plt.tight_layout()
+
+            #Save image to debug_folder
+            folder_name = "debug"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"beam_x{self.id_x}_y{self.id_y}_dir_cos_plot.png"
+            path_name = os.path.join(folder_name, image_name)
+            plt.savefig(path_name, dpi = 300)
 
             # Print information
             alpha = np.degrees(np.arccos(e_x))
@@ -884,7 +892,7 @@ class Beam:
 
             f, ax = plt.subplots()
             plt.title(
-                f"Debug - find_div,\n m_x = {m_x:.2f}, theta_x = {theta_x:.2f}deg,\nm_y = {m_y:.2f}, theta_y = {theta_y:.2f}deg,")
+                f"Debug - find_div,\n m_x = {m_x:.2f}, 2 x theta_x = {2*theta_x:.2f}deg ,\nm_y = {m_y:.2f}, 2 x theta_y = {2*theta_y:.2f}deg,")
             # ax.plot(z_px_arr, width_x_arr, label = "x")
             ax.plot(z_px_arr, width_y_arr, ".", label="y", color = "tab:blue")
             ax.plot(z_px_arr, width_y_fit_arr, label="y-fit", color = "tab:blue")
@@ -895,6 +903,17 @@ class Beam:
             ax.set_ylabel("width [px]")
             ax.legend()
             plt.tight_layout()
+
+            #Save image to debug_folder
+            folder_name = "debug"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"beam_x{self.id_x}_y{self.id_y}_div_plot.png"
+            path_name = os.path.join(folder_name, image_name)
+            plt.savefig(path_name, dpi = 300)
+
+
 
     def find_lin_backg(self, arr, debug=True):
         """
