@@ -30,6 +30,9 @@ from scipy.ndimage import gaussian_filter
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from scipy.stats import norm
+
+
 from matplotlib.patches import Rectangle
 
 # 3rd party imports
@@ -473,10 +476,13 @@ class Tomography:
             plt.savefig(path_name, dpi=300)
             print(f"Figure was saved in home directory as {image_name}.")
 
-    def plot_div(self, debug = False, save = False):
+    def plot_div(self, save = False):
         """
         Plots 2 grids with the x-divergence and y-divergence of the beams plotted in an array of
         colormaps.
+
+        Parameters:
+            save [Bool] - save grid with color encoded divergence for x and y;
         """
 
         #generate grid points
@@ -527,6 +533,65 @@ class Tomography:
             path_name_2 = os.path.join(folder_name, image_name_2)
             f2.savefig(path_name_2, dpi=300)
             print(f"Figure was saved as {path_name_2}.")
+
+    def plot_div_hist(self, save = False):
+        """
+        Plot a histogram with the divergence angles of the beams in x and y.
+        """
+        # generate grid points
+        x_values = np.arange(0, self.shape[0])
+        y_values = np.arange(1, self.shape[1])
+        x, y = np.meshgrid(x_values, y_values, indexing="ij")
+
+        div_x_arr = [[self.beam_l[id_x][id_y].div_x for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_y_arr = [[self.beam_l[id_x][id_y].div_y for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_x_arr = np.reshape(div_x_arr, (-1,))
+        div_y_arr = np.reshape(div_y_arr, (-1,))
+
+        #Plot
+        f, ax = plt.subplots(ncols=2)
+
+        # x Data
+        # generate histogram - x
+        hist_data_x, bins_x, _ = ax[0].hist(div_x_arr, bins=20, label="x", color="tab:blue", density=True)
+        ax[0].set_title("Div x (full-angle)")
+        ax[0].set_xlabel("(full-angle) [deg]")
+
+        # fit gaussian curve to data
+        mu, std = norm.fit(div_x_arr)
+        xmin, xmax = ax[0].get_xlim()
+        x = np.linspace(xmin, xmax, 100)
+        p = norm.pdf(x, mu, std)
+        ax[0].plot(x, p, 'k', linewidth=2, )
+        ax[0].set_title(f"Div - x\nmu = {mu:.2f}°, std = {std:.2f}")
+
+        # y Data
+        # generate histogram - y
+        hist_data_y, bins_y, _ = ax[1].hist(div_y_arr, bins=20, label="y", color="tab:blue", density=True)
+        ax[1].set_title("Div y (full-angle)")
+        ax[1].set_xlabel("(full-angle) [deg]")
+
+        # fit gaussian curve to data
+        mu, std = norm.fit(div_y_arr)
+        xmin, xmax = ax[1].get_xlim()
+        x = np.linspace(xmin, xmax, 100)
+        p = norm.pdf(x, mu, std)
+        ax[1].plot(x, p, 'k', linewidth=2, )
+        ax[1].set_title(f"Div - y\nmu = {mu:.2f}°, std = {std:.2f}")
+
+        if save:
+            folder_name = "analysis"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+            image_name = f"{datetime_string}_beam_div_hist.png"
+            path_name = os.path.join(folder_name, image_name)
+            f.savefig(path_name, dpi = 300)
+            print(f"Figure was saved as {path_name}.")
+
 
     def plot_dir(self, save = False):
         fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
@@ -606,7 +671,6 @@ class Tomography:
         plt.tight_layout()
 
         return f, ax
-
 
 class Cross_Section:
     def __init__(self, z_coord, shape, image):
