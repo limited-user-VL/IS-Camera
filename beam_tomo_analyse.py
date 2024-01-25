@@ -16,6 +16,8 @@ class Beam: contains (id_x, id_y) and (tilt_x, tilt_y) and (beam_div_x, beam_div
 import pickle
 import numpy as np
 import os
+from datetime import datetime
+
 import skimage
 from skimage import transform as t
 from skimage import exposure as e
@@ -28,6 +30,9 @@ from scipy.ndimage import gaussian_filter
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from scipy.stats import norm
+
+
 from matplotlib.patches import Rectangle
 
 # 3rd party imports
@@ -212,17 +217,17 @@ class Tomography:
         # 1. Extract rotation angle, using the first cross-section (lowest z-value)
         print("Extracting rotation angle for the lowest z cross section.")
         cross_sect_i = self.cross_sect_l[0]
-        opt_angle = cross_sect_i.find_rot(angle_min=angle_min, angle_max=angle_max,
-                                          angle_step=angle_step, plot=False)
+        opt_angle = cross_sect_i.find_rot(angle_min = angle_min, angle_max = angle_max,
+                                          angle_step = angle_step, plot = False)
         print(f"Optimal rotation angle = {opt_angle:.2f}deg")
 
         # 2. Extract grid spacing;
         print("Extracting the grid spacing")
         cross_sect_i = self.cross_sect_l[0]
-        peak_arr = cross_sect_i.find_peaks(nrows=3, ncols=10, min_distance=100)
+        peak_arr = cross_sect_i.find_peaks(exp_num_peaks = int(self.shape[0]*self.shape[1]), min_distance = 50)
 
         # label beams - line_id, col_id
-        kmeans_rows = KMeans(n_clusters=3)
+        kmeans_rows = KMeans(n_clusters=self.shape[0])
         kmeans_rows.fit(peak_arr[:, 0].reshape(-1, 1))  # kmeans, 1 cluster per row
         coords_rows = kmeans_rows.cluster_centers_
         mean_delta_x = np.mean(np.diff(np.sort(coords_rows, axis=0), axis=0))  # spacing between rows
@@ -231,8 +236,8 @@ class Tomography:
 
         # 3. The rotation angle, rotated images and spacing are written to the cross-section objects
         print("Updating the rotation angle and rotated image for each cross section.")
-        self.spacing_px = spacing
-        self.spacing_mm = spacing * self.pixel_size * 10**3
+        self.spacing_px = int(spacing)
+        self.spacing_mm = float(spacing * self.pixel_size * 10**3)
         for cross_sect_i in tqdm(self.cross_sect_l):
             cross_sect_i.rot_angle = opt_angle
             cross_sect_i.image_rot = t.rotate(cross_sect_i.image, cross_sect_i.rot_angle)
@@ -255,7 +260,7 @@ class Tomography:
         image_i = self.cross_sect_l[0].image_rot
 
         #find peaks
-        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.8))
+        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.5))
         peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
 
         #sort peaks to match the index of the beams
@@ -311,107 +316,6 @@ class Tomography:
                 beam_i = self.beam_l[id_x][id_y]
                 beam_i.find_coords_and_widths(self.cross_sect_l, self.cross_sect_z_l, self.roi_width, debug = debug)
 
-    def plot_cross_section(self, id_z):
-        """
-        Plot cross sections together with ROIs, for a given cross-section;
-
-        :param id_z: identifies cross-section. From 0 to self.n_sections;
-        :return: f, ax
-        """
-
-        # find rotated image of cross section
-        image_i = self.cross_sect_l[id_z].image_rot
-
-        # find beam_coordinates
-        rois_in_cross_section = [[ [] for _ in range(self.shape[1])] for _ in range(self.shape[0])]
-
-        for id_x in range(self.shape[0]):
-            for id_y in range(self.shape[1]):
-                beam_i = self.beam_l[id_x][id_y]
-                coords = beam_i.beam_coord_l[id_z]
-                rois_in_cross_section[id_x][id_y] = coords
-
-        # find rois_width
-        roi_width = self.roi_width
-
-        f, ax = plt.subplots()
-        plt.imshow(image_i, origin = "lower")
-        plt.xlabel("col [px]")
-        plt.ylabel("row [px]")
-
-        for id_x in range(self.shape[0]):
-            for id_y in range(self.shape[1]):
-                row, col, z = rois_in_cross_section[id_x][id_y]
-
-                # Create a rectangle patch
-                rect = Rectangle((int(col-roi_width/2), int(row - roi_width/2)),
-                                         roi_width, roi_width, linewidth=2, edgecolor='r', facecolor='none')
-
-                # Add the rectangle to the Axes
-                ax.add_patch(rect)
-                plt.title(f"id_z = {id_z}, z = {self.cross_sect_z_l[id_z]:.2f}mm")
-        plt.tight_layout()
-
-        return f, ax
-
-    def plot_div(self):
-        """
-        Plots 2 grids with the x-divergence and y-divergence of the beams plotted in an array of
-        colormaps.
-
-        """
-
-        x_values = np.arange(0, self.shape[0])
-        y_values = np.arange(1, self.shape[1])
-        x, y = np.meshgrid(x_values, y_values, indexing="ij")
-
-        div_x_arr = [[self.beam_l[id_x][id_y].div_x for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
-        div_y_arr = [[self.beam_l[id_x][id_y].div_y for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
-
-        # Plot using a colormap -div x
-        plt.figure(figsize=(8, 3))
-        colormap = plt.pcolormesh(y, x, div_x_arr, cmap='viridis', shading='auto')
-        for (i, j), val in np.ndenumerate(div_x_arr):
-            plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
-        plt.colorbar(colormap)
-        plt.xlabel('y')
-        plt.ylabel('x')
-        plt.title('Div_x - full angle [deg]')
-        plt.show()
-        plt.tight_layout()
-
-        # Plot using a colormap -div y
-        plt.figure(figsize=(8, 3))
-        colormap = plt.pcolormesh(y, x, div_y_arr, cmap='viridis', shading='auto')
-        for (i, j), val in np.ndenumerate(div_y_arr):
-            plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
-        plt.colorbar(colormap)
-        plt.xlabel('y')
-        plt.ylabel('x')
-        plt.title('Div_y - full angle [deg]')
-        plt.show()
-        plt.tight_layout()
-
-    def plot_dir(self):
-        fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
-                                   figsize=(2 * self.shape[1], 2 * self.shape[0]),
-                                   nrows=self.shape[0],
-                                   ncols=self.shape[1])
-
-        for id_x in range(self.shape[0]):
-            for id_y in range(self.shape[1]):
-                beam_i = self.beam_l[id_x][id_y]
-                e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
-
-                theta = np.arccos(e_z)
-                phi = np.arctan(e_y / e_x)
-                label = f"{id_x:.0f}x{id_y:.0f}, $\\theta = {{ {np.degrees(theta):.1f} }}^\circ, \\phi = {{ {np.degrees(phi):.1f} }}^\circ$"
-
-                ax_arr[id_x][id_y].plot(phi, np.degrees(theta), "o")
-                ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
-                ax_arr[id_x][id_y].set_rlim(0, 15)
-        plt.tight_layout()
-
     def set_max_z(self, max_z):
         """
         Establish max z-value [mm] of cross sections to be used in fitting to extract tilt_x, tilt_y, div_x, div_y
@@ -465,8 +369,6 @@ class Tomography:
         limit_z_fit = True - limits the fits in the coordinates and width calculations
         debug = True - produces extra prints and plots for debugging purposes
 
-
-
         """
 
         if limit_z_fit:
@@ -514,7 +416,7 @@ class Tomography:
         self.find_div(limit_z_fit = limit_z_fit, debug = debug)
         self.find_mean_dir_cos()
 
-    def plot_dir_single(self):
+    def plot_dir_single(self, save = False):
         """
         Plots the direction of all beams in a single polar plot.
         #TODO Rotate reference frame such that the average direction coincides with
@@ -559,6 +461,216 @@ class Tomography:
         # ax.plot(phi_rad, theta_deg, ".", color = "green")
         # In the future apply transform to all points that maps the average vector to 0,0,1.
 
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+
+            folder_name = "analysis"
+            image_name = f"{datetime_string}_beam_directions_single.png"
+
+            path_name = os.path.join(folder_name, image_name)
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            plt.savefig(path_name, dpi=300)
+            print(f"Figure was saved in home directory as {image_name}.")
+
+    def plot_div(self, save = False):
+        """
+        Plots 2 grids with the x-divergence and y-divergence of the beams plotted in an array of
+        colormaps.
+
+        Parameters:
+            save [Bool] - save grid with color encoded divergence for x and y;
+        """
+
+        #generate grid points
+        x_values = np.arange(0, self.shape[0])
+        y_values = np.arange(1, self.shape[1])
+        x, y = np.meshgrid(x_values, y_values, indexing="ij")
+
+        div_x_arr = [[self.beam_l[id_x][id_y].div_x for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_y_arr = [[self.beam_l[id_x][id_y].div_y for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+
+        # Plot using a colormap -div x
+        f1, ax = plt.subplots(figsize=(8, 3))
+        colormap = plt.pcolormesh(y, x, div_x_arr, cmap='viridis', shading='auto')
+        for (i, j), val in np.ndenumerate(div_x_arr):
+            plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
+
+        plt.colorbar(ax = ax)
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
+        ax.set_title('Div_x - full angle [deg]')
+        plt.tight_layout()
+
+        # Plot using a colormap -div y
+        f2, ax = plt.subplots(figsize=(8, 3))
+        colormap = plt.pcolormesh(y, x, div_y_arr, cmap='viridis', shading='auto')
+        for (i, j), val in np.ndenumerate(div_y_arr):
+            plt.text(y_values[j], x_values[i], f"{val:.2f}", ha='center', va='center', color='white')
+        plt.colorbar(ax = ax)
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
+        ax.set_title('Div_y - full angle [deg]')
+        plt.tight_layout()
+
+        if save:
+            folder_name = "analysis"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+            image_name_1 = f"{datetime_string}_beam_div_x.png"
+            path_name_1 = os.path.join(folder_name, image_name_1)
+            f1.savefig(path_name_1, dpi = 300)
+            print(f"Figure was saved as {path_name_1}.")
+
+            image_name_2 = f"{datetime_string}_beam_div_y.png"
+            path_name_2 = os.path.join(folder_name, image_name_2)
+            f2.savefig(path_name_2, dpi=300)
+            print(f"Figure was saved as {path_name_2}.")
+
+    def plot_div_hist(self, save = False):
+        """
+        Plot a histogram with the divergence angles of the beams in x and y.
+        """
+        # generate grid points
+        x_values = np.arange(0, self.shape[0])
+        y_values = np.arange(1, self.shape[1])
+        x, y = np.meshgrid(x_values, y_values, indexing="ij")
+
+        div_x_arr = [[self.beam_l[id_x][id_y].div_x for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_y_arr = [[self.beam_l[id_x][id_y].div_y for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_x_arr = np.reshape(div_x_arr, (-1,))
+        div_y_arr = np.reshape(div_y_arr, (-1,))
+
+        #Plot
+        f, ax = plt.subplots(ncols=2)
+
+        # x Data
+        # generate histogram - x
+        hist_data_x, bins_x, _ = ax[0].hist(div_x_arr, bins=20, label="x", color="tab:blue", density=True)
+        ax[0].set_title("Div x (full-angle)")
+        ax[0].set_xlabel("(full-angle) [deg]")
+
+        # fit gaussian curve to data
+        mu, std = norm.fit(div_x_arr)
+        xmin, xmax = ax[0].get_xlim()
+        x = np.linspace(xmin, xmax, 100)
+        p = norm.pdf(x, mu, std)
+        ax[0].plot(x, p, 'k', linewidth=2, )
+        ax[0].set_title(f"Div - x\nmu = {mu:.2f}°, std = {std:.2f}")
+
+        # y Data
+        # generate histogram - y
+        hist_data_y, bins_y, _ = ax[1].hist(div_y_arr, bins=20, label="y", color="tab:blue", density=True)
+        ax[1].set_title("Div y (full-angle)")
+        ax[1].set_xlabel("(full-angle) [deg]")
+
+        # fit gaussian curve to data
+        mu, std = norm.fit(div_y_arr)
+        xmin, xmax = ax[1].get_xlim()
+        x = np.linspace(xmin, xmax, 100)
+        p = norm.pdf(x, mu, std)
+        ax[1].plot(x, p, 'k', linewidth=2, )
+        ax[1].set_title(f"Div - y\nmu = {mu:.2f}°, std = {std:.2f}")
+
+        if save:
+            folder_name = "analysis"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+            image_name = f"{datetime_string}_beam_div_hist.png"
+            path_name = os.path.join(folder_name, image_name)
+            f.savefig(path_name, dpi = 300)
+            print(f"Figure was saved as {path_name}.")
+
+
+    def plot_dir(self, save = False):
+        fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
+                                   figsize=(2 * self.shape[1], 2 * self.shape[0]),
+                                   nrows=self.shape[0],
+                                   ncols=self.shape[1])
+
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                beam_i = self.beam_l[id_x][id_y]
+                e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
+
+                theta = np.arccos(e_z)
+                phi = np.arctan(e_y / e_x)
+                label = f"{id_x:.0f}x{id_y:.0f}, $\\theta = {{ {np.degrees(theta):.1f} }}^\circ, \\phi = {{ {np.degrees(phi):.1f} }}^\circ$"
+
+                ax_arr[id_x][id_y].plot(phi, np.degrees(theta), "o")
+                ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
+                ax_arr[id_x][id_y].set_rlim(0, 15)
+
+        plt.tight_layout()
+
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+
+            folder_name = "analysis"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"{datetime_string}_beam_directions.png"
+            path_name = os.path.join(folder_name, image_name)
+
+            plt.savefig(path_name, dpi = 300)
+            print(f"Figure was saved as {path_name}.")
+
+    def plot_cross_section(self, id_z):
+        """
+        Plot cross sections together with ROIs, for a given cross-section;
+
+        :param id_z: identifies cross-section. From 0 to self.n_sections;
+        :return: f, ax
+        """
+
+        # find rotated image of cross section
+        image_i = self.cross_sect_l[id_z].image_rot
+
+        # find beam_coordinates
+        rois_in_cross_section = [[ [] for _ in range(self.shape[1])] for _ in range(self.shape[0])]
+
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                beam_i = self.beam_l[id_x][id_y]
+                coords = beam_i.beam_coord_l[id_z]
+                rois_in_cross_section[id_x][id_y] = coords
+
+        # find rois_width
+        roi_width = self.roi_width
+
+        f, ax = plt.subplots()
+        plt.imshow(image_i, origin = "lower")
+        plt.xlabel("col [px]")
+        plt.ylabel("row [px]")
+
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                row, col, z = rois_in_cross_section[id_x][id_y]
+
+                # Create a rectangle patch
+                rect = Rectangle((int(col-roi_width/2), int(row - roi_width/2)),
+                                         roi_width, roi_width, linewidth=2, edgecolor='r', facecolor='none')
+
+                # Add the rectangle to the Axes
+                ax.add_patch(rect)
+                plt.title(f"id_z = {id_z}, z = {self.cross_sect_z_l[id_z]:.2f}mm")
+        plt.tight_layout()
+
+        return f, ax
 
 class Cross_Section:
     def __init__(self, z_coord, shape, image):
@@ -637,10 +749,7 @@ class Cross_Section:
 
         return angle_opt
 
-    def find_peaks(self, nrows=3, ncols=10, min_distance=50):
-        """
-        obsolete, delete;
-        """
+    def find_peaks(self, exp_num_peaks = 50, min_distance=50):
         """
         Find the coordinates of the beams in a cross-section;
         Updates the list self.beam_coord_l;
@@ -648,14 +757,11 @@ class Cross_Section:
         Parameters:
         - rows (int): number of expected rows (horizontal)
         - columns (int): number of expected columns (vertical)
-        - min_distance: minimum distance between the center of the beams;        
-
+        - min_distance: minimum distance between the center of the beams;
         """
 
         if self.image_rot is not None:
             image = self.image_rot
-            exp_num_peaks = nrows * ncols
-
             peak_arr = feature.peak_local_max(image, num_peaks=exp_num_peaks, min_distance=min_distance)
             self.beam_coord_l = peak_arr
         else:
@@ -769,23 +875,31 @@ class Beam:
             f, ax = plt.subplots(nrows=1, ncols=3, figsize=(8, 3))
             ax[0].plot(t_arr, x_arr, ".")
             ax[0].plot(t_arr, pos(t_arr, x0, v_x))
-            ax[0].set_title(f"v_x = {v_x:.2f}")
+            ax[0].set_title(f"v_x = {v_x:.2f}, e_x = {e_x:.2f}")
             ax[0].set_xlabel("Step idx [int]")
             ax[0].set_ylabel("Position [px]")
 
             ax[1].plot(t_arr, y_arr, ".")
             ax[1].plot(t_arr, pos(t_arr, y0, v_y))
-            ax[1].set_title(f"v_y = {v_y:.2f}")
+            ax[1].set_title(f"v_y = {v_y:.2f}, e_y = {e_y:.2f}")
             ax[1].set_xlabel("Step idx [int]")
             ax[1].set_ylabel("Position [px]")
 
             ax[2].plot(t_arr, z_arr, ".")
             ax[2].plot(t_arr, pos(t_arr, z0, v_z))
-            ax[2].set_title(f"v_z = {v_z:.2f}")
+            ax[2].set_title(f"v_z = {v_z:.2f}, e_z = {e_z:.2f}")
             ax[2].set_ylabel("Position [px]")
             ax[2].set_xlabel("Step idx [int]")
-
             plt.tight_layout()
+
+            #Save image to debug_folder
+            folder_name = "debug"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"beam_x{self.id_x}_y{self.id_y}_dir_cos_plot.png"
+            path_name = os.path.join(folder_name, image_name)
+            plt.savefig(path_name, dpi = 300)
 
             # Print information
             alpha = np.degrees(np.arccos(e_x))
@@ -842,7 +956,7 @@ class Beam:
 
             f, ax = plt.subplots()
             plt.title(
-                f"Debug - find_div,\n m_x = {m_x:.2f}, theta_x = {theta_x:.2f}deg,\nm_y = {m_y:.2f}, theta_y = {theta_y:.2f}deg,")
+                f"Debug - find_div,\n m_x = {m_x:.2f}, 2 x theta_x = {2*theta_x:.2f}deg ,\nm_y = {m_y:.2f}, 2 x theta_y = {2*theta_y:.2f}deg,")
             # ax.plot(z_px_arr, width_x_arr, label = "x")
             ax.plot(z_px_arr, width_y_arr, ".", label="y", color = "tab:blue")
             ax.plot(z_px_arr, width_y_fit_arr, label="y-fit", color = "tab:blue")
@@ -853,6 +967,17 @@ class Beam:
             ax.set_ylabel("width [px]")
             ax.legend()
             plt.tight_layout()
+
+            #Save image to debug_folder
+            folder_name = "debug"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"beam_x{self.id_x}_y{self.id_y}_div_plot.png"
+            path_name = os.path.join(folder_name, image_name)
+            plt.savefig(path_name, dpi = 300)
+
+
 
     def find_lin_backg(self, arr, debug=True):
         """
