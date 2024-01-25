@@ -592,7 +592,6 @@ class Tomography:
             f.savefig(path_name, dpi = 300)
             print(f"Figure was saved as {path_name}.")
 
-
     def plot_dir(self, save = False):
         fig, ax_arr = plt.subplots(subplot_kw={'projection': 'polar'},
                                    figsize=(2 * self.shape[1], 2 * self.shape[0]),
@@ -803,6 +802,8 @@ class Beam:
         #initialised by tomo.init_coords()
         self.beam_coord_l = list() # of centroid [x,y,z] at different z values --> updated by tomo.complete_beam_coords()
         self.beam_width_l = list() # sigma of gaussian fit --> radius at 1/e^2
+        self.beam_intensity_l = list() #updated by beam.find_coords_and_widths()
+
         self.roi_l = list() #list of 2d arrays with ROIs of each beam;
         self.roi_fit_params_l = list() #arr is initiaed by tomo.init_coords() and filled by tomo.complete_beam_coords()
         self.i_row_l = list() #stores I(x) within ROI, for each cross section of the beam
@@ -1249,6 +1250,8 @@ class Beam:
             # update beam.roi_l and beam.beam_coord_l
             self.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
             self.beam_width_l[id_z] = np.array([row_sigma, col_sigma]) #row_sigma --> sum over rows --> I(y)
+            self.beam_intensity_l[id_z] = np.max(roi_i)
+            
             self.roi_l[id_z] = roi_i
             self.roi_fit_params_l[id_z] = [col_mu, row_mu, col_sigma, row_sigma]
             self.i_row_l[id_z] = i_row
