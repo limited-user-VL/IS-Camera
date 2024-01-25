@@ -222,9 +222,11 @@ def optimise_exposure(start_exp_time = 0.5, debug = False):
     exp_time = start_exp_time
 
     while True:
-        img_i = snap_image(exp_time=exp_time, camera_gain=0, FPS=5, plot=True, save=False)
+        img_i = snap_image(exp_time=exp_time, camera_gain=0, FPS=5, plot=False, save=False)
         time.sleep(0.25)
         if np.max(img_i) < int(3000):
+            return exp_time
+        elif exp_time < 1/40_000: #minimum exposure time ?
             return exp_time
         else:
             exp_time = exp_time * 0.5
