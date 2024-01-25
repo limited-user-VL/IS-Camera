@@ -46,8 +46,8 @@ cam1 = None
 del cam1
 cam1 = TISCamera(SN_CAMERA) #monochrome, SN 28020401
 
-cam1.set_format('Y16 (1280x1024)')
-cam1.set_format('Y16 (640x480)')
+#cam1.set_format('Y16 (1280x1024)')
+#cam1.set_format('Y16 (640x480)')
 cam1.set_format('Y16 (2048x1536)')
 print(cam1.get_format())
 
@@ -167,7 +167,7 @@ def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True, save = Fa
         
 #%% beam tomography
 
-def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
+def beam_tomography(start_pos = 17.75, exp_time = 1/40000, save = False):
     """
     Extracts several pictures of the quantum light chip, at different heights
     for a tomographic analysis of the beams;
@@ -189,7 +189,7 @@ def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
 
     """
     
-    abs_move_stage(start_pos)
+    #abs_move_stage(start_pos)
     
     img_store = list()
     coord_store = list()
@@ -224,7 +224,10 @@ def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
     return img_store, coord_store
 
 #%%
-image_store, coord_store = beam_tomography(start_pos = 14.7, exp_time=1/40000, save = True)
+# Read current position
+print("Read current position: ", z_stage.read_position(), "mm")
+#%%
+image_store, coord_store = beam_tomography(start_pos = 15.09, exp_time=1/5000, save = True)
 
 
 #%%
