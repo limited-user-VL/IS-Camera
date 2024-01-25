@@ -10,7 +10,8 @@ from pathlib import Path
 import sys
 import site
 from getmac import get_mac_address as gma
-import pickle 
+import pickle
+import time
 
 # add VL api to pythonpath
 root = Path(r'G:\Shared drives\VitreaLab Share')
@@ -61,7 +62,6 @@ def abs_move_stage(abs_pos):
         print(f"Moved stage from {out_z_coord_start:.2f}mm to {out_z_coord_stop:.2f}mm.")
     else:
         print("Give a position in the range [0-25mm]")
-    
 
 def rel_move_stage(rel_step = +0.1):
     """
@@ -83,7 +83,6 @@ def rel_move_stage(rel_step = +0.1):
         print("Give a valid relative jog size: [0.001-1.0]mm")
     
     return out_z_coord_stop
-
 
 def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True, save = False):
     
@@ -107,8 +106,7 @@ def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True, save = Fa
             get_ipython().run_line_magic('matplotlib', 'inline')
         else:
             get_ipython().run_line_magic('matplotlib', 'qt5')
-        
-        
+
         if len(np.shape(img))==2: # monochrome
            
             plt.clf()
@@ -131,14 +129,13 @@ def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True, save = Fa
                
             img_show = img_norm_flip
             img_show = img_norm
-        
-            
+
             plt.clf()
             # plt.imshow(img_show, cmap='coolwarm')
             plt.imshow(img_show, cmap='plasma')
             plt.title('SN:' + cam1.sn + ', Format:' + cam1.get_format())
             plt.show()
-            
+
             print(' ')
             print('Mean (16 bit): R=%.2f, G=%.2f, B=%.2f' %(np.mean(img[:,:,0]),np.mean(img[:,:,1]),np.mean(img[:,:,2])))
             print('Max (16 bit=65536): R=%.2f, G=%.2f, B=%.2f' %(np.max(img[:,:,0]),np.max(img[:,:,1]),np.max(img[:,:,2])))
@@ -164,14 +161,11 @@ def snap_image(exp_time = 1/5000, camera_gain = 0, FPS = 5, plot=True, save = Fa
         
     return img
 
-        
 #%% beam tomography
-
-def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
+def beam_tomography(save = False):
     """
     Extracts several pictures of the quantum light chip, at different heights
     for a tomographic analysis of the beams;
-
 
     Parameters
     ----------
@@ -186,15 +180,16 @@ def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
         List with all the frames of the tomography.
     coord_store : list
         List with the z- coordinate of each frame.
-
     """
-    
-    abs_move_stage(start_pos)
-    
+    #abs_move_stage(start_pos)
+    #rel_move_stage(rel_step=+0.1)
+
+    exp_time = optimise_exposure()
+
     img_store = list()
     coord_store = list()
     
-    for i in range(40):      
+    for i in range(30):
         print("-"*30)
         current_coord = rel_move_stage(rel_step = +0.1)
         img_i = snap_image(exp_time = exp_time, camera_gain = 0, FPS = 5, plot = True, save= False)
@@ -222,6 +217,17 @@ def beam_tomography(start_pos = 17.75, exp_time = 1/5000, save = False):
             pickle.dump(dictionary, f)
 
     return img_store, coord_store
+
+def optimise_exposure(start_exp_time = 0.5, debug = False):
+    exp_time = start_exp_time
+
+    while True:
+        img_i = snap_image(exp_time=exp_time, camera_gain=0, FPS=5, plot=True, save=False)
+        time.sleep(0.25)
+        if np.max(img_i) < int(3000):
+            return exp_time
+        else:
+            exp_time = exp_time * 0.5
 
 #%%
 image_store, coord_store = beam_tomography(start_pos = 14.7, exp_time=1/40000, save = True)
