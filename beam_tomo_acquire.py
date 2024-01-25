@@ -73,7 +73,7 @@ def rel_move_stage(rel_step = +0.1):
     
     rel_step = float(rel_step)
     
-    if 0.001<rel_step<1.0:
+    if (0.001<abs(rel_step)) and (abs(rel_step)<1.0):
         z_stage = KDC101_Class.KDC101_translation(SN_KDC)
         out_z_coord_start = z_stage.read_position()
         z_stage.rel_move(float(rel_step))
@@ -81,6 +81,7 @@ def rel_move_stage(rel_step = +0.1):
         print(f"Jogged stage from {out_z_coord_start:.2f}mm to {out_z_coord_stop:.2f}mm.")
     else:
         print("Give a valid relative jog size: [0.001-1.0]mm")
+        return None
     
     return out_z_coord_stop
 
@@ -187,9 +188,10 @@ def beam_tomography(save = False):
 
     #abs_move_stage(start_pos)
     #rel_move_stage(rel_step=+0.1)
-
-    exp_time = optimise_exposure()
-
+    print("-"*30)
+    exp_time = optimise_exposure(start_exp_time = 0.1, debug = False)
+    print(f"Optimised exposure to {exp_time:.5f}s")
+    
 
     img_store = list()
     coord_store = list()
@@ -228,20 +230,27 @@ def optimise_exposure(start_exp_time = 0.5, debug = False):
 
     while True:
         img_i = snap_image(exp_time=exp_time, camera_gain=0, FPS=5, plot=False, save=False)
-        time.sleep(0.25)
-        if np.max(img_i) < int(3000):
+        time.sleep(0.1)
+        if np.max(img_i) < int(3500):
             return exp_time
         elif exp_time < 1/40_000: #minimum exposure time ?
             return exp_time
         else:
-            exp_time = exp_time * 0.5
+            exp_time = exp_time * 0.75
 
 #%%
 # Read current position
 print("Read current position: ", z_stage.read_position(), "mm")
-#%%
-image_store, coord_store = beam_tomography(start_pos = 15.09, exp_time=1/5000, save = True)
 
+#%%
+exp_time = optimise_exposure(start_exp_time = 0.5, debug = False)
+print("Exposure time is:", exp_time, "s")
+
+#%%
+image_store, coord_store = beam_tomography(save = True)
+
+#%%
+current_coord = rel_move_stage(rel_step = -0.25)
 
 #%%
 if not True: # TEST
