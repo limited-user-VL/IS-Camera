@@ -52,7 +52,7 @@ def find_min_and_argmin(arr):
     argmin_value = np.argmin(arr)
     return min_value, argmin_value
 
-def normalise(arr):
+def normalise_arr(arr):
     """
     Normalises array arr, by subtracting minimum value and dividing by maximum
 
@@ -240,7 +240,7 @@ class Tomography:
         self.spacing_mm = float(spacing * self.pixel_size * 10**3)
         for cross_sect_i in tqdm(self.cross_sect_l):
             cross_sect_i.rot_angle = opt_angle
-            cross_sect_i.image_rot = t.rotate(cross_sect_i.image, cross_sect_i.rot_angle)
+            cross_sect_i.image_rot = t.rotate(cross_sect_i.image, cross_sect_i.rot_angle, preserve_range=True)
             cross_sect_i.spacing_px = self.spacing_px
             cross_sect_i.spacing_mm = self.spacing_mm
 
@@ -290,6 +290,7 @@ class Tomography:
                 beam_i.beam_coord_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
                 beam_i.beam_coord_l[0] = peak_sorted_arr[id_x, id_y, 0]
                 beam_i.beam_width_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
+                beam_i.beam_intensity_l = [[] for _ in range(self.n_sections)] #init beam.beam_intensity_l
 
                 beam_i.roi_l = [[] for _ in range(self.n_sections)] #initialise beam_i.roi_l
                 beam_i.roi_fit_params_l = [[] for _ in range(self.n_sections)]
@@ -671,6 +672,41 @@ class Tomography:
 
         return f, ax
 
+    def plot_uniformity(self, save = True):
+        """
+        Plots a 2D grid, where each entry shows the maximum intensity value within the
+        region of interest of each beam, in the lowest cross section;
+
+        Returns handles of the figure and axis: f, ax
+        """
+        i_map = [[self.beam_l[id_x][id_y].beam_intensity_l[0] for id_y in range(self.shape[1])] for id_x in
+                 range(self.shape[0])]
+
+        f, ax = plt.subplots()
+        im = ax.imshow(i_map, origin="lower")
+        ax.set_xlabel("Column #")
+        ax.set_ylabel("Row #")
+        plt.colorbar(im, ax = ax)
+        ax.set_title(f"Min/Max = {np.min(i_map) / np.max(i_map):.2f}")
+
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+
+            folder_name = "analysis"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"{datetime_string}_uniformity.png"
+            path_name = os.path.join(folder_name, image_name)
+
+            plt.savefig(path_name, dpi=300)
+            print(f"Figure was saved as {path_name}.")
+            
+        return f, ax
+
+
 class Cross_Section:
     def __init__(self, z_coord, shape, image):
         self.z_coord = z_coord
@@ -735,7 +771,7 @@ class Cross_Section:
 
         angle_opt = angle_arr[np.argmax(max_arr)]  # pick rotation angle that aligns all rows;
         self.rot_angle = angle_opt
-        self.image_rot = t.rotate(self.image, angle_opt)
+        self.image_rot = t.rotate(self.image, angle_opt, preserve_range=True)
 
         if plot:
             plt.figure()
@@ -978,8 +1014,6 @@ class Beam:
             path_name = os.path.join(folder_name, image_name)
             plt.savefig(path_name, dpi = 300)
 
-
-
     def find_lin_backg(self, arr, debug=True):
         """
         Finds linear function mx+b that represents background.
@@ -1036,16 +1070,16 @@ class Beam:
         row_idx_arr, col_idx_arr = range(len(roi_sum_row_arr)), range(len(roi_sum_col_arr))
 
         # Normalise I(x) and I(y)
-        roi_sum_row_arr = normalise(roi_sum_row_arr)
-        roi_sum_col_arr = normalise(roi_sum_col_arr)
+        roi_sum_row_arr = normalise_arr(roi_sum_row_arr)
+        roi_sum_col_arr = normalise_arr(roi_sum_col_arr)
 
         # Correct background - background has a slope --> mx+b --> subtract background(x) from I(x)
         roi_sum_row_arr = self.subtract_lin_backg(roi_sum_row_arr, debug=debug)
-        roi_sum_row_arr = normalise(roi_sum_row_arr)
+        roi_sum_row_arr = normalise_arr(roi_sum_row_arr)
 
         # m_col, b_col = find_backg_function(roi_sum_col_arr, debug = True)
         roi_sum_col_arr = self.subtract_lin_backg(roi_sum_col_arr, debug=debug)
-        roi_sum_col_arr = normalise(roi_sum_col_arr)
+        roi_sum_col_arr = normalise_arr(roi_sum_col_arr)
 
         i_row = roi_sum_row_arr #sum along cols
         i_col = roi_sum_col_arr
@@ -1251,7 +1285,7 @@ class Beam:
             self.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
             self.beam_width_l[id_z] = np.array([row_sigma, col_sigma]) #row_sigma --> sum over rows --> I(y)
             self.beam_intensity_l[id_z] = np.max(roi_i)
-            
+
             self.roi_l[id_z] = roi_i
             self.roi_fit_params_l[id_z] = [col_mu, row_mu, col_sigma, row_sigma]
             self.i_row_l[id_z] = i_row
