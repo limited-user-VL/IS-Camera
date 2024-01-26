@@ -1243,6 +1243,7 @@ class Beam:
 
             plt.figure()
             plt.imshow(roi_i)
+            plt.colorbar()
             plt.title(f"z_idx = {i}, z = {z_i:.2f}mm")
             plt.xlabel("x [px]")
             plt.ylabel("y [px]")
