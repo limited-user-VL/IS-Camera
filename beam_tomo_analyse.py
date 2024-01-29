@@ -129,20 +129,35 @@ def get_roi(image, center_x, center_y, roi_width,):
 
 
 class Tomography:
-    def __init__(self, filename, shape, roi_width = 100):
+    def __init__(self, filename, shape, method, roi_width = 100):
         """
         Instantiate Tomography measurement.
 
-        Args:
-        1. Filename (str): File location and name
-        2. Shape (tuple): (n_rows, n_cols), e.g (3,2)
-        3. roi_width (int): width of region of interest in pixels
+        :param filename: File location and name
+        :type filename: str
+
+        :param shape: Tuple indicating hte shape of the grid of beams (n_rows, n_cols)
+        :type shape: tuple
+
+
+        :param method: "fit" or "stats". "fits" uses a gaussian fit to retrieve the position and width of each beam
+        "stats" uses the normalised intensity distribution as a pdf to calculate the mean and sigma of the beam.
+
+        :param roi_width: width of the region of interest in pixels
+        :type roi_width: integer
 
         """
         self.filename = filename
         self.directory = os.getcwd()
         self.shape = shape
         self.roi_width = int(roi_width)
+
+        if method == "fit" or method == "stats":
+            self.method = str(method)  # define method used to extract mu and sigma of each beam.
+            # method = "fit" or "stats"
+        else:
+            raise ValueError("Cannot initialise Tomography object. Please define method as fit or stats.")
+
 
         # updated with method load_data
         self.cross_sect_image_l = None  # list with cross section images
@@ -299,7 +314,7 @@ class Tomography:
 
         print("Coordinates of beam in first layer were determined.")
 
-    def find_coords_and_widths(self, fit = False, debug = False):
+    def find_coords_and_widths(self, debug = False):
         """
         Calls beam_i.complete_coords iteratively to cover all beams on the chip
         updates:
@@ -317,7 +332,7 @@ class Tomography:
         for id_x in tqdm(range(self.shape[0])):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
-                beam_i.find_coords_and_widths(self.cross_sect_l, self.cross_sect_z_l, self.roi_width, fit = fit, debug = debug)
+                beam_i.find_coords_and_widths(self.cross_sect_l, self.cross_sect_z_l, self.roi_width, fit = self.method, debug = debug)
         print("Coordinates of the beams and respective widths have been determined in all cross sections")
 
     def set_max_z(self, max_z):
@@ -363,7 +378,7 @@ class Tomography:
         for id_x in range(self.shape[0]):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
-                beam_i.find_dir_cos(self.pixel_size, limit_z_fit = limit_z_fit, debug = debug)
+                beam_i.find_dir_cos(self.pixel_size, self.method, limit_z_fit = limit_z_fit, debug = debug)
 
     def find_div(self, limit_z_fit = True, debug = False):
         """
@@ -374,7 +389,6 @@ class Tomography:
         debug = True - produces extra prints and plots for debugging purposes
 
         """
-
         if limit_z_fit:
             print("The fit is limited to the useful cross sections, defined by tomo.set_max_z()")
 
@@ -385,7 +399,7 @@ class Tomography:
         for id_x in range(self.shape[0]):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
-                beam_i.find_div(self.pixel_size, limit_z_fit = limit_z_fit, debug = debug)
+                beam_i.find_div(self.pixel_size, self.method, limit_z_fit = limit_z_fit, debug = debug)
 
     def find_mean_dir_cos(self):
         dir_cos_store = list()
@@ -862,7 +876,7 @@ class Beam:
     def __repr__(self):
         return f"Beam object, id_x = {self.id_x}, id_y = {self.id_y}"
 
-    def find_dir_cos(self,  px_size, limit_z_fit = True, debug = False):
+    def find_dir_cos(self, px_size, method, limit_z_fit = True, debug = False):
         """
         Find direction cosines for the beam:
         e_x = v_x / |v|
@@ -914,7 +928,7 @@ class Beam:
             f, ax = plt.subplots(nrows=1, ncols=3, figsize=(8, 3))
             ax[0].plot(t_arr, x_arr, ".")
             ax[0].plot(t_arr, pos(t_arr, x0, v_x))
-            ax[0].set_title(f"v_x = {v_x:.2f}, e_x = {e_x:.2f}")
+            ax[0].set_title(f"v_x = {v_x:.2f}, e_x = {e_x:.2f}\nmethod={method}")
             ax[0].set_xlabel("Step idx [int]")
             ax[0].set_ylabel("Position [px]")
 
@@ -949,7 +963,7 @@ class Beam:
             print(f"e_y = {e_y:.2f} --> beta = {beta:.2f}deg")
             print(f"e_z = {e_z:.2f} --> gamma = {gamma:.2f}deg")
 
-    def find_div(self, pixel_size, limit_z_fit = True, debug = False):
+    def find_div(self, pixel_size, method, limit_z_fit = True, debug = False):
         """
         Find beam full-angle divergence at 1/e^2
         """
@@ -995,7 +1009,7 @@ class Beam:
 
             f, ax = plt.subplots()
             plt.title(
-                f"Debug - find_div,\n m_x = {m_x:.2f}, 2 x theta_x = {2*theta_x:.2f}deg ,\nm_y = {m_y:.2f}, 2 x theta_y = {2*theta_y:.2f}deg,")
+                f"Debug - find_div - method = {method},\n m_x = {m_x:.2f}, 2 x theta_x = {2*theta_x:.2f}deg ,\nm_y = {m_y:.2f}, 2 x theta_y = {2*theta_y:.2f}deg,")
             # ax.plot(z_px_arr, width_x_arr, label = "x")
             ax.plot(z_px_arr, width_y_arr, ".", label="y", color = "tab:blue")
             ax.plot(z_px_arr, width_y_fit_arr, label="y-fit", color = "tab:blue")
@@ -1122,7 +1136,7 @@ class Beam:
         i_row = roi_sum_row_arr #sum along cols
         i_col = roi_sum_col_arr
 
-        if fit:
+        if method == "fit":
             try:
                 mean_0 = roi_width / 2
                 std_0 = roi_width / 5
@@ -1143,7 +1157,8 @@ class Beam:
 
             except (RuntimeError, ValueError, TypeError):
                 # if the fit fails, extract statistics
-                print(f"Gaussian fit failed for beam (id_x, id_y) = ({self.id_x},{self.id_y})")
+                print(f"Gaussian fit failed for beam (id_x, id_y) = ({self.id_x},{self.id_y}). Beam position and width",
+                      f"were retrieved by stastical method")
                 row_mu = self.get_centroid_val(i_row)
                 row_sigma = self.get_sigma_val(i_row)
                 col_mu = self.get_centroid_val(i_col)
@@ -1151,7 +1166,7 @@ class Beam:
                 popt_row = [row_mu, row_sigma]
                 popt_col = [col_mu, col_sigma]
 
-        else: # fit == False --> extract statistical mu and sigma directly
+        elif method == "stats": # --> extract statistical mu and sigma directly. No fit is used
             row_mu = self.get_centroid_val(i_row)
             row_sigma = self.get_sigma_val(i_row)
             col_mu = self.get_centroid_val(i_col)
@@ -1159,16 +1174,19 @@ class Beam:
             popt_row = [row_mu, row_sigma]
             popt_col = [col_mu, col_sigma]
 
+        else:
+            print("Please choose a tomography method: 1. fit or 2. stats")
+
         if debug:
             plt.figure()
             plt.title("Debug - beam_i.get_roi_specs()")
             plt.plot(row_idx_arr, roi_sum_row_arr, ".", color="k")
-            y_fit = gaussian(row_idx_arr, *popt_row)
+            y_fit = gaussian(row_idx_arr, row_mu, row_sigma)
             plt.plot(row_idx_arr, y_fit, label="row")
             plt.xlabel("[px]")
 
             plt.plot(col_idx_arr, roi_sum_col_arr, ".", color="k")
-            y_fit = gaussian(row_idx_arr, *popt_col)
+            y_fit = gaussian(row_idx_arr, col_mu, col_sigma)
             plt.plot(row_idx_arr, y_fit, label="col")
             plt.legend()
 
@@ -1301,7 +1319,8 @@ class Beam:
             ax[1].set_xlabel("Pos [px]")
             ax[1].legend()
 
-    def find_coords_and_widths(self, cross_sect_l, cross_sect_z_l, roi_width, fit = False, debug = False):
+    def find_coords_and_widths(self, cross_sect_l, cross_sect_z_l, roi_width, method = "fit", debug = False):
+
         """
         Extracts the coordinates and width of the beam, by analysing its trajectory across
         several cross-sections.
@@ -1342,7 +1361,7 @@ class Beam:
             # establish new coordinates of beam in current z_id, with gaussian fit
             #row_mu corresponds to a sum over rows --> I(y)
             #col_mu corrsponds to a sum over cols --> I(x)
-            i_row, i_col, row_mu, col_mu, row_sigma, col_sigma = self.get_roi_specs(roi_i, roi_width, fit = fit, debug=debug)
+            i_row, i_col, row_mu, col_mu, row_sigma, col_sigma = self.get_roi_specs(roi_i, roi_width, method = method, debug=debug)
             coord_x = int(coord_x + (col_mu - roi_width / 2)) #col_mu --> summed over colums --> x
             coord_y = int(coord_y + (row_mu - roi_width / 2))
             coord_z = cross_sect_z_l[id_z]
