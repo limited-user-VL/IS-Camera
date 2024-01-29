@@ -1328,12 +1328,12 @@ class Beam:
             ax[0].set_title(f"id_x = {self.id_x},  id_y = {self.id_y}, id_z = {id_z}")
 
             # plot sum_col - x
-            ax[1].plot(idx_arr, i_col_arr, ".", label="sum_col - x", color="tab:blue")
+            ax[1].plot(idx_arr, i_col_arr, ".", label="sum_col - y", color="tab:blue")
             col_fit = gaussian(idx_arr, col_mu, col_sigma)
             ax[1].plot(idx_arr, col_fit, color="tab:blue")
 
             # plot sum_col - y
-            ax[1].plot(idx_arr, i_row_arr, ".", label="sum_row - y", color="tab:orange")
+            ax[1].plot(idx_arr, i_row_arr, ".", label="sum_row - x", color="tab:orange")
             row_fit = gaussian(idx_arr, row_mu, row_sigma)
             ax[1].plot(idx_arr, row_fit, color="tab:orange")
 
@@ -1373,14 +1373,14 @@ class Beam:
             ax[0].set_ylabel("X [px]")
             ax[0].set_title(f"id_x = {self.id_x},  id_y = {self.id_y}, id_z = {id_z}")
 
-            # plot sum_col - x
-            ax[1].plot(idx_arr, i_col_arr, ".", label="sum_col - x", color="tab:blue")
+            # plot sum_row - x
+            ax[1].plot(idx_arr, i_col_arr, ".", label="sum_col - y", color="tab:blue")
             ax[1].axvline(x=col_mu, color="tab:blue", linestyle="-", linewidth = 3)
             ax[1].axvline(x=col_mu + col_sigma, color="tab:blue", linestyle="--")
             ax[1].axvline(x=col_mu - col_sigma, color="tab:blue", linestyle="--")
 
             # plot sum_col - y
-            ax[1].plot(idx_arr, i_row_arr, ".", label="sum_row - y", color="tab:orange")
+            ax[1].plot(idx_arr, i_row_arr, ".", label="sum_row - x", color="tab:orange")
             ax[1].axvline(x=row_mu, color="tab:orange", linestyle="-", linewidth = 3)
             ax[1].axvline(x=row_mu - row_sigma, color="tab:orange", linestyle="--")
             ax[1].axvline(x=row_mu + row_sigma, color="tab:orange", linestyle="--")
