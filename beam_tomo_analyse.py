@@ -289,13 +289,45 @@ class Tomography:
         :return:
         """
         # call tomo.coord_init()
+        #TODO: Fix peak finder
+        #TODO: Function to generate movie for a single beam.
+
+
+        exp_num_peaks = self.shape[0] * self.shape[1]
+        cross_0 = self.cross_sect_l[0]
+        spacing = int(cross_0.spacing_px)
+        image_i = self.cross_sect_l[0].image_rot
+        # call tomo.coord_init()
         exp_num_peaks = self.shape[0] * self.shape[1]
         cross_0 = self.cross_sect_l[0]
         spacing = int(cross_0.spacing_px)
         image_i = self.cross_sect_l[0].image_rot
 
         #find peaks
-        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.5))
+        peak_arr = feature.peak_local_max(image_i,
+                                          num_peaks=exp_num_peaks,
+                                          min_distance=int(spacing * 0.6),
+                                          threshold_abs=0.1)
+        peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
+
+        #sort peaks to match the index of the beams
+        min_x = np.min(peak_arr[:, 0])
+        min_y = np.min(peak_arr[:, 1])
+        spacing = self.spacing_px
+        for id_x in range(self.shape[0]):
+            for id_y in range(self.shape[1]):
+                for k in range(3):
+                    coord_x = min_x + id_x * spacing #in pixel units
+                    coord_y = min_y + id_y * spacing #in pixel units;
+
+                    d = np.sum(np.abs(peak_arr - np.array([coord_x, coord_y])), axis=1)
+                    idx_min = np.argmin(d, axis=0)
+                    coord_i = np.concatenate((peak_arr[idx_min], np.array(self.cross_sect_z_l[0]).reshape(-1)),axis=0)
+                    peak_sorted_arr[id_x][id_y][k] = coord_i
+
+        peak_sorted_arr = np.array(peak_sorted_arr)
+        #find peaks
+        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.6))
         peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
 
         #sort peaks to match the index of the beams
