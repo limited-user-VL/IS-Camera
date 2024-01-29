@@ -127,9 +127,21 @@ def get_roi(image, center_x, center_y, roi_width,):
           int(center_y - roi_width / 2.): int(center_y + roi_width / 2.)]
     return roi
 
+def convert_uint16_to_uint8(img_uint16):
+    """
+    Convert image encoded in 16bit integers to 8bit integers.
+    To be used in generating videos from sequence of images
+    """
+
+    # Normalize the uint16 image to 0-1 range
+    normalized = img_uint16 / np.max(img_uint16)
+
+    # Scale to 0-255 and convert to uint8
+    img_uint8 = (normalized * 255).astype(np.uint8)
+    return img_uint8
 
 class Tomography:
-    def __init__(self, filename, shape, method, roi_width = 100):
+    def __init__(self, filename, shape, method = "stats", roi_width = 100, sub_backg = False):
         """
         Instantiate Tomography measurement.
 
@@ -146,11 +158,15 @@ class Tomography:
         :param roi_width: width of the region of interest in pixels
         :type roi_width: integer
 
+        :param sub_backg: if true, tomo.find_coords_and_widths will subtract the background noise level (with linear
+        function) before establishing the value of mu and sigma (position and width) of the beas.
+
         """
         self.filename = filename
         self.directory = os.getcwd()
         self.shape = shape
         self.roi_width = int(roi_width)
+        self.sub_backg = sub_backg #if True
 
         if method == "fit" or method == "stats":
             self.method = str(method)  # define method used to extract mu and sigma of each beam.
@@ -332,7 +348,7 @@ class Tomography:
         for id_x in tqdm(range(self.shape[0])):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
-                beam_i.find_coords_and_widths(self.cross_sect_l, self.cross_sect_z_l, self.roi_width, fit = self.method, debug = debug)
+                beam_i.find_coords_and_widths(self.cross_sect_l, self.cross_sect_z_l, self.roi_width, method = self.method, sub_backg = self.sub_backg, debug = debug)
         print("Coordinates of the beams and respective widths have been determined in all cross sections")
 
     def set_max_z(self, max_z):
@@ -453,6 +469,8 @@ class Tomography:
         print(f"phi_deg = {np.degrees(phi_rad):.2f}, theta_deg = {theta_deg:.2f}")
         ax.scatter(phi_rad, theta_deg, marker="o", s=120, color="black")
         ax.set_rmax(10)
+        fig.suptitle(f"Plot of beam direction. Method = {self.method}")
+
         # ax.set_rlim(10)
 
         # plot direction cosines
@@ -466,7 +484,7 @@ class Tomography:
                 theta_deg = np.degrees(np.arccos(vec[2]))
                 phi_rad = np.arctan(vec[1] / vec[0])
                 ax.plot(phi_rad, theta_deg, ".", color="red")
-
+        plt.tight_layout()
         # plot direction cosines in rotated frame average #TODO
         beam_i = self.beam_l[id_x][id_y]
 
@@ -520,7 +538,7 @@ class Tomography:
         plt.colorbar(ax = ax)
         ax.set_xlabel('y')
         ax.set_ylabel('x')
-        ax.set_title('Div_x - full angle [deg]')
+        ax.set_title(f'Div_x - full angle [deg], method = {self.method}')
         plt.tight_layout()
 
         # Plot using a colormap -div y
@@ -531,7 +549,7 @@ class Tomography:
         plt.colorbar(ax = ax)
         ax.set_xlabel('y')
         ax.set_ylabel('x')
-        ax.set_title('Div_y - full angle [deg]')
+        ax.set_title(f'Div_y - full angle [deg], method = {self.method}')
         plt.tight_layout()
 
         if save:
@@ -572,7 +590,6 @@ class Tomography:
         # x Data
         # generate histogram - x
         hist_data_x, bins_x, _ = ax[0].hist(div_x_arr, bins=20, label="x", color="tab:blue", density=True)
-        ax[0].set_title("Div x (full-angle)")
         ax[0].set_xlabel("(full-angle) [deg]")
 
         # fit gaussian curve to data
@@ -581,13 +598,11 @@ class Tomography:
         x = np.linspace(xmin, xmax, 100)
         p = norm.pdf(x, mu, std)
         ax[0].plot(x, p, 'k', linewidth=2, )
-        ax[0].set_title(f"Div - x\nmu = {mu:.2f}°, std = {std:.2f}")
+        ax[0].set_title(f"Div - x\nmu = {mu:.2f}°, std = {std:.2f}\nmethod = {self.method}")
 
         # y Data
         # generate histogram - y
         hist_data_y, bins_y, _ = ax[1].hist(div_y_arr, bins=20, label="y", color="tab:blue", density=True)
-        ax[1].set_title("Div y (full-angle)")
-        ax[1].set_xlabel("(full-angle) [deg]")
 
         # fit gaussian curve to data
         mu, std = norm.fit(div_y_arr)
@@ -595,7 +610,8 @@ class Tomography:
         x = np.linspace(xmin, xmax, 100)
         p = norm.pdf(x, mu, std)
         ax[1].plot(x, p, 'k', linewidth=2, )
-        ax[1].set_title(f"Div - y\nmu = {mu:.2f}°, std = {std:.2f}")
+        ax[1].set_title(f"Div - y\nmu = {mu:.2f}°, std = {std:.2f}\nmethod = {self.method}")
+        ax[1].set_xlabel("(full-angle) [deg]")
 
         if save:
             folder_name = "analysis"
@@ -629,6 +645,7 @@ class Tomography:
                 ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
                 ax_arr[id_x][id_y].set_rlim(0, 15)
 
+        fig.suptitle(f"Method = {self.method}")
         plt.tight_layout()
 
         if save:
@@ -1084,7 +1101,7 @@ class Beam:
 
         return arr - backg_arr
 
-    def get_roi_specs(self, roi_img, roi_width, fit = False, debug=False):
+    def get_roi_specs(self, roi_img, roi_width, method = "fit", sub_backg = False, debug=False):
         """
         Given a 2D array with a region of interest (ROI) around a beam,
         fit a gaussian beam to the marginal X and marginal Y distributions
@@ -1119,7 +1136,8 @@ class Beam:
         #   plt.imshow(roi_img, origin = "lower")
 
         #get x arr for plotting
-        row_idx_arr, col_idx_arr = range(len(roi_sum_row_arr)), range(len(roi_sum_col_arr))
+        row_idx_arr = range(len(roi_sum_row_arr))
+        col_idx_arr = range(len(roi_sum_col_arr))
 
         # Normalise I(x) and I(y)
         roi_sum_row_arr = normalise_arr(roi_sum_row_arr)
@@ -1129,12 +1147,13 @@ class Beam:
         roi_sum_row_arr = self.subtract_lin_backg(roi_sum_row_arr, debug=debug)
         roi_sum_row_arr = normalise_arr(roi_sum_row_arr)
 
-        # m_col, b_col = find_backg_function(roi_sum_col_arr, debug = True)
-        roi_sum_col_arr = self.subtract_lin_backg(roi_sum_col_arr, debug=debug)
+        if sub_backg: #subtract background level from roi?
+            roi_sum_col_arr = self.subtract_lin_backg(roi_sum_col_arr, debug=debug)
         roi_sum_col_arr = normalise_arr(roi_sum_col_arr)
 
         i_row = roi_sum_row_arr #sum along cols
         i_col = roi_sum_col_arr
+
 
         if method == "fit":
             try:
@@ -1273,8 +1292,8 @@ class Beam:
             plt.imshow(roi_i)
             plt.colorbar()
             plt.title(f"z_idx = {i}, z = {z_i:.2f}mm")
-            plt.xlabel("x [px]")
-            plt.ylabel("y [px]")
+            plt.xlabel("id_y [px]")
+            plt.ylabel("id_x [px]")
 
     def plot_gauss_fit(self, limit_z_fit = False):
         """
@@ -1319,7 +1338,7 @@ class Beam:
             ax[1].set_xlabel("Pos [px]")
             ax[1].legend()
 
-    def find_coords_and_widths(self, cross_sect_l, cross_sect_z_l, roi_width, method = "fit", debug = False):
+    def find_coords_and_widths(self, cross_sect_l, cross_sect_z_l, roi_width, method = "fit", sub_backg = False, debug = False):
 
         """
         Extracts the coordinates and width of the beam, by analysing its trajectory across
@@ -1347,33 +1366,33 @@ class Beam:
         for id_z in range(n_sections):
             #define initial_guess for center of ROI (region of interest)
             if id_z == 0:
-                coord_x, coord_y, coord_z = self.beam_coord_l[id_z]
+                pos_idx_x, pos_idx_y, pos_id_z = self.beam_coord_l[id_z]
             else:
-                coord_x, coord_y, coord_z = self.beam_coord_l[id_z-1]
+                pos_idx_x, pos_idx_y, pos_id_z = self.beam_coord_l[id_z-1] #use beam position from previous cross sect
 
             #get beam roi, based on coordinates of beam in lower section
             image_i = cross_sect_l[id_z].image_rot
-            roi_i = get_roi(image_i, coord_x, coord_y,
+            roi_i = get_roi(image_i, pos_idx_x, pos_idx_y,
                             roi_width = roi_width)
 
-            roi_i = gaussian_filter(roi_i, sigma = roi_width / 10)  # smoothen ROI for pixel noise
+            roi_i = gaussian_filter(roi_i, sigma = int(roi_width / 20), )  # smoothen ROI for pixel noise
 
             # establish new coordinates of beam in current z_id, with gaussian fit
             #row_mu corresponds to a sum over rows --> I(y)
             #col_mu corrsponds to a sum over cols --> I(x)
-            i_row, i_col, row_mu, col_mu, row_sigma, col_sigma = self.get_roi_specs(roi_i, roi_width, method = method, debug=debug)
-            coord_x = int(coord_x + (col_mu - roi_width / 2)) #col_mu --> summed over colums --> x
-            coord_y = int(coord_y + (row_mu - roi_width / 2))
-            coord_z = cross_sect_z_l[id_z]
+            i_row, i_col, row_mu, col_mu, row_sigma, col_sigma = self.get_roi_specs(roi_i, roi_width, method = method, sub_backg = sub_backg, debug=debug)
+            pos_idx_x = int(coord_x + (col_mu - roi_width / 2)) #col_mu --> summed over colums --> x
+            pos_idx_y = int(coord_y + (row_mu - roi_width / 2))
+            pos_z = cross_sect_z_l[id_z]
 
             if debug:
                 plt.figure()
-                plt.title(f"Debug - beam_i.complete_coords_widths,\nz= {coord_z:.2f}mm")
+                plt.title(f"Debug - beam_i.complete_coords_widths,\nz= {pos_z:.2f}mm")
                 plt.imshow(roi_i, origin="lower")
 
             # update beam.roi_l and beam.beam_coord_l
-            self.beam_coord_l[id_z] = np.array([coord_x, coord_y, coord_z])
-            self.beam_width_l[id_z] = np.array([row_sigma, col_sigma]) #row_sigma --> sum over rows --> I(y)
+            self.beam_coord_l[id_z] = np.array([pos_idx_x, pos_idx_y, pos_z]) # units are [px, px, mm]
+            self.beam_width_l[id_z] = np.array([col_sigma, row_sigma]) #row_sigma --> sum over rows --> I(y)
             self.beam_intensity_l[id_z] = np.max(roi_i)
 
             self.roi_l[id_z] = roi_i
