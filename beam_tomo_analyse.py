@@ -127,29 +127,6 @@ def get_roi(image, center_x, center_y, roi_width,):
           int(center_y - roi_width / 2.): int(center_y + roi_width / 2.)]
     return roi
 
-def get_centroid_val(signal):
-    """
-    Calculate the centroid of a signal --> y_arr is proportional to the occurrence probability
-    """
-    idx_arr = np.arange(len(signal))
-    signal = np.abs(signal)
-    prob_arr = signal / np.sum(signal) #probability mass function
-    centroid = np.sum(prob_arr * idx_arr)
-    return centroid
-
-def get_sigma_val(signal):
-    """
-    Calculate the centroid of a signal --> y_arr is proportional to the occurrence probability
-    """
-    idx_arr = np.arange(len(signal))
-    signal = np.abs(signal)
-    prob_arr = signal / np.sum(signal) #probability mass function
-    centroid = np.sum(prob_arr * idx_arr)
-
-    sigma = np.sqrt(np.sum(prob_arr * ((idx_arr - centroid)**2)))
-
-    return sigma
-
 
 class Tomography:
     def __init__(self, filename, shape, roi_width = 100):
@@ -330,10 +307,12 @@ class Tomography:
          2. beam_i.beam_width_l
          3. beam_i.roi_l
 
-        :param debug:
+        :param fit: True if the beam positions and widths are extracted with a gaussian fit method
+        and False is a statistical method is used.
+        :type fit: bool
         :return:
         """
-        self.init_coords() #determines cords of the first cross section
+        self.init_coords() #determines coords of the first cross section
 
         for id_x in tqdm(range(self.shape[0])):
             for id_y in range(self.shape[1]):
@@ -1037,6 +1016,29 @@ class Beam:
             path_name = os.path.join(folder_name, image_name)
             plt.savefig(path_name, dpi = 300)
 
+    def get_centroid_val(self, signal):
+        """
+        Calculate the centroid of a signal --> y_arr is proportional to the occurrence probability
+        """
+        idx_arr = np.arange(len(signal))
+        signal = np.abs(signal)
+        prob_arr = signal / np.sum(signal)  # probability mass function
+        centroid = np.sum(prob_arr * idx_arr)
+        return centroid
+
+    def get_sigma_val(self, signal):
+        """
+        Calculate the centroid of a signal --> y_arr is proportional to the occurrence probability
+        """
+        idx_arr = np.arange(len(signal))
+        signal = np.abs(signal)
+        prob_arr = signal / np.sum(signal)  # probability mass function
+        centroid = np.sum(prob_arr * idx_arr)
+
+        sigma = np.sqrt(np.sum(prob_arr * ((idx_arr - centroid) ** 2)))
+
+        return sigma
+
     def find_lin_backg(self, arr, debug=True):
         """
         Finds linear function mx+b that represents background.
@@ -1075,13 +1077,20 @@ class Beam:
         and retrieve the middle point for X and Y and the sigma of the
         gaussian fit.
 
-        In the case the gaussian fit fails to converge the we extract the
+
+        In the case fit=False or if the gaussian fit fails, we extract the
         statistics of the intensity distribution: centroid_x, sigma_x, centroid_y, sigma_y
 
-        :param roi_img: (2D array) - region of interest around beam
-        :param roi_width (int) - width of region of interest in pixel units;
-        :param fit (bool) - if True, extract params of gaussian fit. If false, extract params
+        :param roi_img: 2D array with region of interest around beam
+        :type roi_img: numpy array (2D)
+
+        :param roi_width: width of region of interest in pixel units;
+        :type roi_width: int
+
+        :param fit: if True, extract params of gaussian fit. If false, extract params
         from statistical distribution of intensity.
+        :type fit: boolean
+
         :return: i_row, i_col, row_mu, col_mu, row_sigma, col_sigma
         :
         """
@@ -1135,18 +1144,18 @@ class Beam:
             except (RuntimeError, ValueError, TypeError):
                 # if the fit fails, extract statistics
                 print(f"Gaussian fit failed for beam (id_x, id_y) = ({self.id_x},{self.id_y})")
-                row_mu = get_centroid_val(i_row)
-                row_sigma = get_sigma_val(i_row)
-                col_mu = get_centroid_val(i_col)
-                col_sigma = get_sigma_val(i_col)
+                row_mu = self.get_centroid_val(i_row)
+                row_sigma = self.get_sigma_val(i_row)
+                col_mu = self.get_centroid_val(i_col)
+                col_sigma = self.get_sigma_val(i_col)
                 popt_row = [row_mu, row_sigma]
                 popt_col = [col_mu, col_sigma]
 
         else: # fit == False --> extract statistical mu and sigma directly
-            row_mu = get_centroid_val(i_row)
-            row_sigma = get_sigma_val(i_row)
-            col_mu = get_centroid_val(i_col)
-            col_sigma = get_sigma_val(i_col)
+            row_mu = self.get_centroid_val(i_row)
+            row_sigma = self.get_sigma_val(i_row)
+            col_mu = self.get_centroid_val(i_col)
+            col_sigma = self.get_sigma_val(i_col)
             popt_row = [row_mu, row_sigma]
             popt_col = [col_mu, col_sigma]
 
@@ -1165,6 +1174,7 @@ class Beam:
 
         #return row_mu, col_mu, row_sigma, col_sigma
         return i_row, i_col, row_mu, col_mu, row_sigma, col_sigma
+
 
     def plot_trajectory(self, limit_z_fit = True):
         """
@@ -1297,12 +1307,20 @@ class Beam:
         several cross-sections.
 
         params:
-            cross_sect_l from Tomo instance;
-            cross_sect_z_l from Tomo instance;
-            roi_width
+        :param cross_sect_l: list with CrossSection objects;
+        :type cross_sect_l: list
+
+        :param cross_sect_z_l: list containing the z-coordinates of each cross section;
+        :type cross_sect_z_l: list
+
+        :param roi_width: width in pixels of the region of interest (square)
+        :type roi_width: integer
 
         debug: plots ROI of each beam
 
+        :param fit: True if the beam positions and widths are extracted with a gaussian fit method
+        and False is a statistical method is used.
+        :type fit: bool
 
         """
         n_sections = len(self.beam_coord_l)
