@@ -266,7 +266,7 @@ class Tomography:
         kmeans_rows.fit(peak_arr[:, 0].reshape(-1, 1))  # kmeans, 1 cluster per row
         coords_rows = kmeans_rows.cluster_centers_
         mean_delta_x = np.mean(np.diff(np.sort(coords_rows, axis=0), axis=0))  # spacing between rows
-        spacing = mean_delta_x
+        spacing = int(mean_delta_x)
         print(f"Average spacing [px] between beams = {spacing:.2f}")
 
         # 3. The rotation angle, rotated images and spacing are written to the cross-section objects
@@ -281,22 +281,16 @@ class Tomography:
 
     def init_coords(self):
         """
-        Finds the coordinates of the beams on the lowest cross-section.
+        Finds the coordinates of the beams on the lowest cross-section and initialises the beams (Beam class) attributes
         The coordinates are then pushed into:
          1. CrossSection.beam_coord_l
          2. Beam_i.beam_coord_l
 
         :return:
         """
-        # call tomo.coord_init()
         #TODO: Fix peak finder
         #TODO: Function to generate movie for a single beam.
 
-
-        exp_num_peaks = self.shape[0] * self.shape[1]
-        cross_0 = self.cross_sect_l[0]
-        spacing = int(cross_0.spacing_px)
-        image_i = self.cross_sect_l[0].image_rot
         # call tomo.coord_init()
         exp_num_peaks = self.shape[0] * self.shape[1]
         cross_0 = self.cross_sect_l[0]
@@ -306,8 +300,9 @@ class Tomography:
         #find peaks
         peak_arr = feature.peak_local_max(image_i,
                                           num_peaks=exp_num_peaks,
-                                          min_distance=int(spacing * 0.6),
-                                          threshold_abs=0.1)
+                                          min_distance=int(spacing * 0.5),
+                                          threshold_rel=0.05)
+
         peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
 
         #sort peaks to match the index of the beams
@@ -320,49 +315,32 @@ class Tomography:
                     coord_x = min_x + id_x * spacing #in pixel units
                     coord_y = min_y + id_y * spacing #in pixel units;
 
-                    d = np.sum(np.abs(peak_arr - np.array([coord_x, coord_y])), axis=1)
-                    idx_min = np.argmin(d, axis=0)
-                    coord_i = np.concatenate((peak_arr[idx_min], np.array(self.cross_sect_z_l[0]).reshape(-1)),axis=0)
-                    peak_sorted_arr[id_x][id_y][k] = coord_i
-
-        peak_sorted_arr = np.array(peak_sorted_arr)
-        #find peaks
-        peak_arr = feature.peak_local_max(image_i, num_peaks=exp_num_peaks, min_distance=int(spacing * 0.6))
-        peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
-
-        #sort peaks to match the index of the beams
-        min_x = np.min(peak_arr[:, 0])
-        min_y = np.min(peak_arr[:, 1])
-        spacing = self.spacing_px
-        for id_x in range(self.shape[0]):
-            for id_y in range(self.shape[1]):
-                for k in range(3):
-                    coord_x = min_x + id_x * spacing #in pixel units
-                    coord_y = min_y + id_y * spacing #in pixel units;
-
-                    d = np.sum(np.abs(peak_arr - np.array([coord_x, coord_y])), axis=1)
-                    idx_min = np.argmin(d, axis=0)
-                    coord_i = np.concatenate((peak_arr[idx_min], np.array(self.cross_sect_z_l[0]).reshape(-1)),axis=0)
-                    peak_sorted_arr[id_x][id_y][k] = coord_i
+                    d = np.sum(np.abs(peak_arr - np.array([coord_x, coord_y])), axis=1) #distance array
+                    idx_min = np.argmin(d, axis=0) #point with smallest distance
+                    if d[idx_min] < 0.6*spacing:
+                        coord_i = np.concatenate((peak_arr[idx_min], np.array(self.cross_sect_z_l[0]).reshape(-1)),axis=0)
+                        peak_sorted_arr[id_x][id_y][k] = coord_i
+                    else: #Do not attribute a beam, if distance is larger than grid spacing
+                        peak_sorted_arr[id_x][id_y][k] = None
 
         peak_sorted_arr = np.array(peak_sorted_arr)
 
         # pass peak coords to cross section objects
         cross_0.beam_coord_l = peak_sorted_arr
 
-        # pass peak coords into each beam, listed in self.beam_l
+        # initialise beam attributes and pass peak coords into each beam, listed in self.beam_l
         for id_x in range(self.shape[0]):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
                 beam_i.beam_coord_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
                 beam_i.beam_coord_l[0] = peak_sorted_arr[id_x, id_y, 0]
                 beam_i.beam_width_l = [[] for _ in range(self.n_sections)] #init beam.beam_coord_l
-                beam_i.beam_intensity_l = [[] for _ in range(self.n_sections)] #init beam.beam_intensity_l
+                beam_i.beam_intensity_l = [None for _ in range(self.n_sections)] #init beam.beam_intensity_l
 
-                beam_i.roi_l = [[] for _ in range(self.n_sections)] #initialise beam_i.roi_l
-                beam_i.roi_beam_param_l = [[] for _ in range(self.n_sections)]
-                beam_i.i_row_l = [[] for _ in range(self.n_sections)]
-                beam_i.i_col_l = [[] for _ in range(self.n_sections)]
+                beam_i.roi_l = [None for _ in range(self.n_sections)] #initialise beam_i.roi_l
+                beam_i.roi_beam_param_l = [None for _ in range(self.n_sections)]
+                beam_i.i_row_l = [None for _ in range(self.n_sections)]
+                beam_i.i_col_l = [None for _ in range(self.n_sections)]
 
         print("Coordinates of beam in first layer were determined.")
 
@@ -459,7 +437,8 @@ class Tomography:
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
                 e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
-                dir_cos_store.append([e_x, e_y, e_z])
+                if e_x != None: #for the case, where no beam is assigned to the grid point id_x, id_y
+                    dir_cos_store.append([e_x, e_y, e_z])
 
         dir_cos_store = np.array(dir_cos_store)
         vec_mean = np.mean(dir_cos_store, axis=0)
@@ -482,9 +461,9 @@ class Tomography:
             debug [bool]: if True, prints and plots to help debugging;
         """
 
-        self.find_dir_cos(limit_z_fit = limit_z_fit, debug = debug)
-        self.find_div(limit_z_fit = limit_z_fit, debug = debug)
-        self.find_mean_dir_cos()
+        self.find_dir_cos(limit_z_fit = limit_z_fit, debug = debug) #find direction cosines
+        self.find_div(limit_z_fit = limit_z_fit, debug = debug) #find divergence
+        self.find_mean_dir_cos() #find mean direction cosine
 
     def plot_dir_single(self, save = False):
         """
@@ -513,23 +492,26 @@ class Tomography:
         for id_x in range(self.shape[0]):
             for id_y in range(self.shape[1]):
                 beam_i = self.beam_l[id_x][id_y]
-
                 e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
                 vec = [e_x, e_y, e_z]
 
-                theta_deg = np.degrees(np.arccos(vec[2]))
-                phi_rad = np.arctan(vec[1] / vec[0])
-                ax.plot(phi_rad, theta_deg, ".", color="red")
-        plt.tight_layout()
-        # plot direction cosines in rotated frame average #TODO
-        beam_i = self.beam_l[id_x][id_y]
+                if e_x != None:
+                    theta_deg = np.degrees(np.arccos(vec[2]))
+                    phi_rad = np.arctan(vec[1] / vec[0])
+                    ax.plot(phi_rad, theta_deg, ".", color="red")
+                else: #if grid point was not assigned a beam
+                    continue
 
-        vec = [beam_i.e_x, beam_i.e_y, beam_i.e_z]
-        vec = vec - vec_mean
-        vec = vec / np.linalg.norm(vec)
+        plt.tight_layout()
+
+        # plot direction cosines in rotated frame average #TODO
+        #beam_i = self.beam_l[id_x][id_y]
+        #vec = [beam_i.e_x, beam_i.e_y, beam_i.e_z]
+        #vec = vec - vec_mean
+        #vec = vec / np.linalg.norm(vec)
         #print(vec)
-        theta_deg = np.degrees(np.arccos(vec[2]))
-        phi_rad = np.arctan(vec[1] / vec[0])
+        #theta_deg = np.degrees(np.arccos(vec[2]))
+        #phi_rad = np.arctan(vec[1] / vec[0])
         # ax.plot(phi_rad, theta_deg, ".", color = "green")
         # In the future apply transform to all points that maps the average vector to 0,0,1.
 
@@ -559,11 +541,18 @@ class Tomography:
 
         #generate grid points
         x_values = np.arange(0, self.shape[0])
-        y_values = np.arange(1, self.shape[1])
+        y_values = np.arange(0, self.shape[1])
         x, y = np.meshgrid(x_values, y_values, indexing="ij")
 
-        div_row_arr = [[self.beam_l[id_x][id_y].div_row for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
-        div_col_arr = [[self.beam_l[id_x][id_y].div_col for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
+        div_row_arr = [[self.beam_l[id_x][id_y].div_row
+                        if self.beam_l[id_x][id_y].div_row!=None else -1 #None entries are converted to -1
+                        for id_y in range(x.shape[1])]
+                        for id_x in range(y.shape[0])]
+
+        div_col_arr = [[self.beam_l[id_x][id_y].div_col
+                        if self.beam_l[id_x][id_y].div_col !=None else -1
+                        for id_y in range(x.shape[1])]
+                       for id_x in range(y.shape[0])]
 
         # Plot using a colormap -div x
         f1, ax = plt.subplots(figsize=(8, 3))
@@ -612,13 +601,17 @@ class Tomography:
         """
         # generate grid points
         x_values = np.arange(0, self.shape[0])
-        y_values = np.arange(1, self.shape[1])
+        y_values = np.arange(0, self.shape[1])
         x, y = np.meshgrid(x_values, y_values, indexing="ij")
 
         div_row_arr = [[self.beam_l[id_x][id_y].div_row for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
         div_col_arr = [[self.beam_l[id_x][id_y].div_col for id_y in range(x.shape[1])] for id_x in range(y.shape[0])]
         div_row_arr = np.reshape(div_row_arr, (-1,))
         div_col_arr = np.reshape(div_col_arr, (-1,))
+
+        #Remove None values from grid points without a beam
+        div_row_arr = div_row_arr[div_row_arr != np.array(None)].astype(float)
+        div_col_arr = div_col_arr[div_col_arr != np.array(None)].astype(float)
 
         #Plot
         f, ax = plt.subplots(ncols=2)
@@ -673,13 +666,16 @@ class Tomography:
                 beam_i = self.beam_l[id_x][id_y]
                 e_x, e_y, e_z = beam_i.e_x, beam_i.e_y, beam_i.e_z
 
-                theta = np.arccos(e_z)
-                phi = np.arctan(e_y / e_x)
-                label = f"{id_x:.0f}x{id_y:.0f}, $\\theta = {{ {np.degrees(theta):.1f} }}^\circ, \\phi = {{ {np.degrees(phi):.1f} }}^\circ$"
+                if e_x != None: #if grid point id_x, id_y was assigned a beam
+                    theta = np.arccos(e_z)
+                    phi = np.arctan(e_y / e_x)
+                    label = f"{id_x:.0f}x{id_y:.0f}, $\\theta = {{ {np.degrees(theta):.1f} }}^\circ, \\phi = {{ {np.degrees(phi):.1f} }}^\circ$"
 
-                ax_arr[id_x][id_y].plot(phi, np.degrees(theta), "o")
-                ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
-                ax_arr[id_x][id_y].set_rlim(0, 15)
+                    ax_arr[id_x][id_y].plot(phi, np.degrees(theta), "o")
+                    ax_arr[id_x][id_y].set_title(f"{label}", fontsize=10)
+                    ax_arr[id_x][id_y].set_rlim(0, 15)
+                else: #no beam assigned to grid point.
+                    continue
 
         fig.suptitle(f"Method = {self.method}")
         plt.tight_layout()
@@ -729,15 +725,17 @@ class Tomography:
 
         for id_x in range(self.shape[0]):
             for id_y in range(self.shape[1]):
-                row, col, z = rois_in_cross_section[id_x][id_y]
+                try:
+                    row, col, z = rois_in_cross_section[id_x][id_y]
 
-                # Create a rectangle patch
-                rect = Rectangle((int(col-roi_width/2), int(row - roi_width/2)),
-                                         roi_width, roi_width, linewidth=2, edgecolor='r', facecolor='none')
-
-                # Add the rectangle to the Axes
-                ax.add_patch(rect)
-                plt.title(f"id_z = {id_z}, z = {self.cross_sect_z_l[id_z]:.2f}mm")
+                    # Create a rectangle patch - !For the Rectangle obj, x is the horizontal axis;
+                    rect = Rectangle((int(col-roi_width/2), int(row - roi_width/2)),
+                                             roi_width, roi_width, linewidth=2, edgecolor='r', facecolor='none')
+                    # Add the rectangle to the Axes
+                    ax.add_patch(rect)
+                except (ValueError, TypeError): #if row, col, z = None (no beam assigned to this grid point)
+                    continue
+        plt.title(f"id_z = {id_z}, z = {self.cross_sect_z_l[id_z]:.2f}mm")
         plt.tight_layout()
 
         return f, ax
@@ -749,15 +747,21 @@ class Tomography:
 
         Returns handles of the figure and axis: f, ax
         """
-        i_map = [[self.beam_l[id_x][id_y].beam_intensity_l[0] for id_y in range(self.shape[1])] for id_x in
-                 range(self.shape[0])]
+        i_map = [[self.beam_l[id_x][id_y].beam_intensity_l[0]
+                  if self.beam_l[id_x][id_y].beam_intensity_l[0] != None
+                  else -1
+                  for id_y in range(self.shape[1])]
+                 for id_x in range(self.shape[0])]
+
+        i_arr = np.array(i_map).reshape(-1)
+        i_arr = i_arr[i_arr != -1]  # exclude negative points
 
         f, ax = plt.subplots()
         im = ax.imshow(i_map, origin="lower")
         ax.set_xlabel("Column #")
         ax.set_ylabel("Row #")
         plt.colorbar(im, ax = ax)
-        ax.set_title(f"Chip Uniformity\nMin/Max = {np.min(i_map) / np.max(i_map):.2f}")
+        ax.set_title(f"Chip Uniformity\nMin/Max = {np.min(i_arr) / np.max(i_arr):.2f}")
 
         if save:
             # Get current date and time
@@ -937,6 +941,10 @@ class Beam:
         e_z = v_z / |v|
 
         Find tilt of the beam with respect to z axis.
+
+        :params method: "stats" or "fit" - specify how the coordinates of the beam (mu) and respective spread (sigma)
+        are calculated.
+        :params debug: if debug True, the linear fits to the beam coordinates are plotted
         """
 
         if limit_z_fit:  # excludes trajectory points beyond a certain z value.
@@ -948,10 +956,17 @@ class Beam:
             max_z_idx = len(self.beam_coord_l)
 
         # organise data
-        x_arr = np.array(self.beam_coord_l)[:max_z_idx, 0]
-        y_arr = np.array(self.beam_coord_l)[:max_z_idx, 1]
-        z_arr = np.array(self.beam_coord_l)[:max_z_idx, 2] * (10 ** -3) / px_size  # z_arr in same units [px]
-        t_arr = np.arange(0, len(x_arr))
+        try:
+            x_arr = np.array(self.beam_coord_l)[:max_z_idx, 0]
+            y_arr = np.array(self.beam_coord_l)[:max_z_idx, 1]
+            z_arr = np.array(self.beam_coord_l)[:max_z_idx, 2] * (10 ** -3) / px_size  # z_arr in same units [px]
+            t_arr = np.arange(0, len(x_arr))
+
+        except (ValueError, TypeError, IndexError) as e:
+            print(30 * "#")
+            print(f"No beam was assigned to the provided grid point: id_x = {self.id_x}, id_y = {self.id_y}.")
+            print("Generated error: ", e)
+            return None
 
         def pos(t, x0, v):
             return x0 + v * t
@@ -1032,11 +1047,18 @@ class Beam:
         else:
             max_z_id = len(self.beam_coord_l)
 
-        z_arr = beam_coord[:max_z_id, 2]
-        z_px_arr = (z_arr * 10 ** -3) / pixel_size
-        beam_width_l = np.array(self.beam_width_l)
-        width_col_arr = beam_width_l[:max_z_id, 0] #col_sigma,
-        width_row_arr = beam_width_l[:max_z_id, 1] #row_sigma
+        try:
+            z_arr = beam_coord[:max_z_id, 2]
+            z_px_arr = (z_arr * 10 ** -3) / pixel_size
+            beam_width_l = np.array(self.beam_width_l)
+            width_col_arr = beam_width_l[:max_z_id, 0] #col_sigma,
+            width_row_arr = beam_width_l[:max_z_id, 1] #row_sigma
+
+        except (TypeError, ValueError, IndexError):
+            print(30 * "#")
+            print(f"No beam assigned to grid point id_x = {self.id_x} and id_y = {self.id_y}.")
+            print("Generated error: ", e, "in Beam.find_div()")
+            return None
 
         # y - fit
         linear_f = lambda x, m, b: m * x + b
@@ -1269,24 +1291,28 @@ class Beam:
         else:
             max_z_id = len(self.beam_coord_l)
 
-        x = beam_coord[:max_z_id, 0]
-        y = beam_coord[:max_z_id, 1]
-        z = beam_coord[:max_z_id, 2]
+        try:
+            x = beam_coord[:max_z_id, 0]
+            y = beam_coord[:max_z_id, 1]
+            z = beam_coord[:max_z_id, 2]
 
-        f, ax = plt.subplots(ncols=2)
-        ax[0].plot(x, z, ".")
-        ax[0].set_title(f"({self.id_x}, {self.id_y}) x-z")
-        ax[0].set_xlabel("X [px]")
-        ax[0].set_ylabel("Z [mm]")
+            f, ax = plt.subplots(ncols=2)
+            ax[0].plot(x, z, ".")
+            ax[0].set_title(f"({self.id_x}, {self.id_y}) x-z")
+            ax[0].set_xlabel("X [px]")
+            ax[0].set_ylabel("Z [mm]")
 
-        ax[1].plot(y, z, ".")
-        ax[1].set_title("y-z")
-        ax[1].set_xlabel("Y [px]")
-        ax[1].set_ylabel("Z [mm]")
+            ax[1].plot(y, z, ".")
+            ax[1].set_title("y-z")
+            ax[1].set_xlabel("Y [px]")
+            ax[1].set_ylabel("Z [mm]")
 
-        plt.tight_layout()
+            plt.tight_layout()
 
-        return f, ax
+            return f, ax
+        except (TypeError, ValueError, IndexError) as e:
+            print(f"Caught exception {e}.")
+            print(f"No beam was associated with the provided grid point.")
 
     def plot_width(self, limit_z_fit = True):
         beam_coord = np.array(self.beam_coord_l)
@@ -1299,10 +1325,16 @@ class Beam:
         else:
             max_z_id = len(self.beam_coord_l)
 
-        z_arr = beam_coord[:max_z_id, 2]
-        beam_width_l = np.array(self.beam_width_l)
-        width_x_arr = beam_width_l[:max_z_id, 0]
-        width_y_arr = beam_width_l[:max_z_id, 1]
+        try:
+            z_arr = beam_coord[:max_z_id, 2]
+            beam_width_l = np.array(self.beam_width_l)
+            width_x_arr = beam_width_l[:max_z_id, 0]
+            width_y_arr = beam_width_l[:max_z_id, 1]
+        except IndexError as e:
+            print(30*"#")
+            print(f"No beam was assigned to the provided grid point: id_x = {self.id_x}, id_y = {self.id_y}.")
+            print("Generated error: ", e)
+            return None
 
         f, ax = plt.subplots()
         ax.plot(z_arr, width_x_arr, label = "x")
@@ -1323,14 +1355,22 @@ class Beam:
         """
         roi_l = self.roi_l
         for i, roi_i in enumerate(roi_l):
-            z_i = self.beam_coord_l[i][2]
+            try:
+                z_i = self.beam_coord_l[i][2]
+            except TypeError as e:
+                print(30 * "#")
+                print(f"No beam was assigned to the provided grid point: id_x = {self.id_x}, id_y = {self.id_y}.")
+                print("Generated error: ", e)
+                return None
 
-            plt.figure()
+            f, ax = plt.subplots()
             plt.imshow(roi_i)
             plt.colorbar()
             plt.title(f"z_idx = {i}, z = {z_i:.2f}mm")
             plt.xlabel("id_y [px]")
             plt.ylabel("id_x [px]")
+
+            return f, ax
 
     def plot_gauss_fit(self, limit_z_fit = False):
         """
@@ -1346,11 +1386,17 @@ class Beam:
             max_id_z = len(self.beam_coord_l)
 
         for id_z in range(max_id_z):
-            roi_i = self.roi_l[id_z]
-            col_mu, row_mu, col_sigma, row_sigma = self.roi_beam_param_l[id_z]  # fit params
-            i_col_arr = self.i_col_l[id_z]  # sum over columns
-            i_row_arr = self.i_row_l[id_z]  # sum over lines
-            idx_arr = np.arange(len(i_col_arr))
+            try:
+                roi_i = self.roi_l[id_z]
+                col_mu, row_mu, col_sigma, row_sigma = self.roi_beam_param_l[id_z]  # fit params
+                i_col_arr = self.i_col_l[id_z]  # sum over columns
+                i_row_arr = self.i_row_l[id_z]  # sum over lines
+                idx_arr = np.arange(len(i_col_arr))
+            except (ValueError, TypeError) as e:
+                print(30 * "#")
+                print(f"No beam was assigned to the provided grid point: id_x = {self.id_x}, id_y = {self.id_y}.")
+                print("Generated error: ", e)
+                return None
 
             # Plots
             f, ax = plt.subplots(ncols=2, nrows=1, figsize=(8, 4))
@@ -1392,11 +1438,17 @@ class Beam:
             max_id_z = len(self.beam_coord_l)
 
         for id_z in range(max_id_z):
-            roi_i = self.roi_l[id_z]
-            col_mu, row_mu, col_sigma, row_sigma = self.roi_beam_param_l[id_z]  # fit params
-            i_col_arr = self.i_col_l[id_z]  # sum over columns
-            i_row_arr = self.i_row_l[id_z]  # sum over lines
-            idx_arr = np.arange(len(i_col_arr))
+            try:
+                roi_i = self.roi_l[id_z]
+                col_mu, row_mu, col_sigma, row_sigma = self.roi_beam_param_l[id_z]  # fit params
+                i_col_arr = self.i_col_l[id_z]  # sum over columns
+                i_row_arr = self.i_row_l[id_z]  # sum over lines
+                idx_arr = np.arange(len(i_col_arr))
+            except (ValueError, TypeError) as e:
+                print(30 * "#")
+                print(f"No beam was assigned to the provided grid point: id_x = {self.id_x}, id_y = {self.id_y}.")
+                print("Generated error: ", e)
+                return None
 
             # Plots
             f, ax = plt.subplots(ncols=2, nrows=1, figsize=(8, 4))
@@ -1449,10 +1501,15 @@ class Beam:
 
         for id_z in range(n_sections):
             #define initial_guess for center of ROI (region of interest)
-            if id_z == 0:
-                pos_idx_x, pos_idx_y, pos_id_z = self.beam_coord_l[id_z]
-            else:
-                pos_idx_x, pos_idx_y, pos_id_z = self.beam_coord_l[id_z-1] #use beam position from previous cross sect
+            try:
+                if id_z == 0:
+                    pos_idx_x, pos_idx_y, pos_id_z = self.beam_coord_l[id_z]
+                else:
+                    pos_idx_x, pos_idx_y, pos_id_z = self.beam_coord_l[id_z-1] #use beam position from previous cross sect
+
+            except (ValueError, TypeError): # if point of the grid, does not have a beam
+                print(f"No beam assigned to grid point id_x = {self.id_x} and id_y = {self.id_y}.")
+                return None
 
             #get beam roi, based on coordinates of beam in lower section
             image_i = cross_sect_l[id_z].image_rot
