@@ -243,12 +243,14 @@ class Tomography:
     def find_rot_spacing(self, angle_min = 0, angle_max = 90, angle_step=0.5):
         """
         Uses image of the cross-section with lowest z value to extract:
-        1. Rotation angle, using the first cross-section (lowest z-value)
+        1. Rotation angle of the image;
         2. Grid spacing;
         3. The rotation angle, rotated images and spacing are written to the cross-section objects
 
         Parameters:
-            angle_step - incremental difference in angle of rotation;
+        :param angle_min: Lowest angle value used for angle search
+        :param angle_max: Maximum angle value for angle search
+        :param angle_step: angle step size used in angle search
         """
 
         # 1. Extract rotation angle, using the first cross-section (lowest z-value)
@@ -825,6 +827,7 @@ class Tomography:
         # Create a movie
         imageio.mimsave(path_name, img_store_8bit, fps=10)  # fps specifies frames per second
 
+        print(f"Saved movie of beam id_x {beam_i.id_x} and id_y {beam_i.id_y} as {path_name}.")
 
 
 class Cross_Section:
