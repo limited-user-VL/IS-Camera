@@ -35,6 +35,8 @@ from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import norm
+import imageio
+
 
 
 from matplotlib.patches import Rectangle
@@ -288,8 +290,6 @@ class Tomography:
 
         :return:
         """
-        # TODO: Function to generate movie for a single beam.
-
         # call tomo.coord_init()
         exp_num_peaks = self.shape[0] * self.shape[1]
         cross_0 = self.cross_sect_l[0]
@@ -795,8 +795,35 @@ class Tomography:
 
         return f, ax
 
-    def generate_beam_movie(self, id_x, id_y):
+    def make_beam_movie(self, id_x, id_y):
+        """
+        Generate movie (.mp4) from a sequence of images / cross sections of a single beam, i.e.
+        the beams regions of interest (ROIs).
+
+        :param id_x: beam row index
+        :param id_y: beam column index
+
+        :type id_x: int
+        :type id_y: int
+
+        """
+        id_x, id_y = 3, 3
         beam_i = self.beam_l[id_x][id_y]
+        img_store = beam_i.roi_l
+
+        # Convert numpy arrays to uint8 (required for imageio)
+        img_store_8bit = [convert_uint16_to_uint8(item) for item in img_store]
+
+        # Save image to debug_folder
+        folder_name = "analysis"
+        if not os.path.exists(folder_name):
+            os.makedirs(folder_name)
+
+        filename = f"beam_id_x{beam_i.id_x}_id_y{beam_i.id_y}.mp4"
+        path_name = os.path.join(folder_name, filename)
+
+        # Create a movie
+        imageio.mimsave(path_name, img_store_8bit, fps=10)  # fps specifies frames per second
 
 
 
