@@ -469,7 +469,8 @@ class Tomography:
     def plot_dir_single(self, save = False):
         """
         Plots the direction of all beams in a single polar plot.
-        # TODO Rotate reference frame such that the average direction coincides with
+        # TODO Rotate reference frame such that the average direction coincides with vertical axis
+        #
         # the z axis.
 
         """
@@ -505,16 +506,6 @@ class Tomography:
 
         plt.tight_layout()
 
-        # TODO plot direction cosines in rotated frame average
-        #beam_i = self.beam_l[id_x][id_y]
-        #vec = [beam_i.e_x, beam_i.e_y, beam_i.e_z]
-        #vec = vec - vec_mean
-        #vec = vec / np.linalg.norm(vec)
-        #print(vec)
-        #theta_deg = np.degrees(np.arccos(vec[2]))
-        #phi_rad = np.arctan(vec[1] / vec[0])
-        # ax.plot(phi_rad, theta_deg, ".", color = "green")
-        # In the future apply transform to all points that maps the average vector to 0,0,1.
 
         if save:
             # Get current date and time
@@ -1593,6 +1584,9 @@ class Beam:
 
         if debug:
             print(f"The coordinates of beam ({self.id_x:.0f},{self.id_y:.0f}) have been determined for all cross-sections.")
+
+# TODO Solve poor fits of the beam divergence (e.g. negative fits)
+# TODO Improve peak detection, for non uniform samples beams go undetected (e.g. ESLANTG2_0205)
 
 """
 #Script
