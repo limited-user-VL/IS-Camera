@@ -288,8 +288,7 @@ class Tomography:
 
         :return:
         """
-        #TODO: Fix peak finder
-        #TODO: Function to generate movie for a single beam.
+        # TODO: Function to generate movie for a single beam.
 
         # call tomo.coord_init()
         exp_num_peaks = self.shape[0] * self.shape[1]
@@ -301,7 +300,7 @@ class Tomography:
         peak_arr = feature.peak_local_max(image_i,
                                           num_peaks=exp_num_peaks,
                                           min_distance=int(spacing * 0.5),
-                                          threshold_rel=0.05)
+                                          threshold_rel=0.02)
 
         peak_sorted_arr = [[[None for k in range(3)] for j in range(self.shape[1])] for i in range(self.shape[0])]
 
@@ -468,7 +467,7 @@ class Tomography:
     def plot_dir_single(self, save = False):
         """
         Plots the direction of all beams in a single polar plot.
-        #TODO Rotate reference frame such that the average direction coincides with
+        # TODO Rotate reference frame such that the average direction coincides with
         # the z axis.
 
         """
@@ -504,7 +503,7 @@ class Tomography:
 
         plt.tight_layout()
 
-        # plot direction cosines in rotated frame average #TODO
+        # TODO plot direction cosines in rotated frame average
         #beam_i = self.beam_l[id_x][id_y]
         #vec = [beam_i.e_x, beam_i.e_y, beam_i.e_z]
         #vec = vec - vec_mean
@@ -695,7 +694,7 @@ class Tomography:
             plt.savefig(path_name, dpi = 300)
             print(f"Figure was saved as {path_name}.")
 
-    def plot_cross_section(self, id_z):
+    def plot_cross_section(self, id_z, save = False):
         """
         Plot cross sections together with ROIs, for a given cross-section;
 
@@ -738,6 +737,22 @@ class Tomography:
         plt.title(f"id_z = {id_z}, z = {self.cross_sect_z_l[id_z]:.2f}mm")
         plt.tight_layout()
 
+        if save:
+            # Get current date and time
+            now_datetime = datetime.now()
+            datetime_string = now_datetime.strftime("%Y-%m-%d %H_%M")
+
+            folder_name = "analysis"
+            if not os.path.exists(folder_name):
+                os.makedirs(folder_name)
+
+            image_name = f"{datetime_string}_cross_section_id_z_{id_z}.png"
+            path_name = os.path.join(folder_name, image_name)
+
+            plt.savefig(path_name, dpi=300)
+            print(f"Figure was saved as {path_name}.")
+
+
         return f, ax
 
     def plot_uniformity(self, save = True):
@@ -779,6 +794,11 @@ class Tomography:
             print(f"Figure was saved as {path_name}.")
 
         return f, ax
+
+    def generate_beam_movie(self, id_x, id_y):
+        beam_i = self.beam_l[id_x][id_y]
+
+
 
 class Cross_Section:
     def __init__(self, z_coord, shape, image):
