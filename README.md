@@ -1,4 +1,16 @@
+# VL Chip emission measurement
+The functions used for the analysis of a chip emission are contained withint the file beam_tomo_acquire.py;
+The execution of this code is usually carried out with cell executions in Spyder. The cells to perform measurements are at the end of the beam_tomo_acquire.py file.
+
+The main function is beam_tomography(), where a stage and a camera are controlled together. The stage sets the distance between the camera and the chip and the camera
+captures the intensity distribution at different distances from the chip, as suggested by the name "beam tomography". To avoid saturation, the exposure of the camera is
+optimised at the first (lowest) cross section.
+The result is a list of images, which are then passed to the analysis, conducted in ipython notebook with support from the code in "beam_tomo_analyse.py".
+
+
 # VL Chip emission analysis
+The functions used for the analysis of a chip emission are contained withint the file beam_tomo_analyse.py. The analysis is then carried in an ipython notebook
+which imports beam_tomo_analyse.py.
 
 This tool is designed to analyze the properties of a grid of laser beams emitted from Vitrealab light chips. It focuses on evaluating:
 1. The intensity distribution of the grids of beams; 
@@ -6,6 +18,8 @@ This tool is designed to analyze the properties of a grid of laser beams emitted
 3. The propagation direction of each beam within the array. 
 
 The code structure is primarily centered around three main classes: `Tomography`, `CrossSection`, and `Beam`. Each class is tailored to handle different aspects of the beam analysis process, from loading and processing data to calculating specific beam properties.
+
+The code from beam_tomo_analyse.py is then called by ipython notebooks, which applies the functions to particular sets of data.
 
 ## 1. Tomography Class
 
